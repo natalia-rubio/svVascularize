@@ -241,17 +241,27 @@ def smooth_junctions_advanced(mesh, tree_data, vessel_map, connectivity,
     smoothed_mesh : pv.PolyData
         Mesh with smoothed junctions
     """
-    # Detect junctions
-    junctions, junction_points = detect_junctions(tree_data, vessel_map, connectivity)
-    
-    if len(junction_points) == 0:
-        print("No junctions detected for smoothing.")
+    try:
+        # Detect junctions
+        junctions, junction_points = detect_junctions(tree_data, vessel_map, connectivity)
+        
+        if len(junction_points) == 0:
+            print("No junctions detected for smoothing.")
+            return mesh
+    except Exception as e:
+        print(f"Warning: Junction detection failed: {e}")
+        print("Returning original mesh without smoothing.")
         return mesh
     
     print(f"Detected {len(junction_points)} junctions for smoothing.")
     
-    # Extract faces to identify wall surfaces
-    faces, walls, caps, shared_boundaries = extract_faces(mesh, None)
+    try:
+        # Extract faces to identify wall surfaces
+        faces, walls, caps, shared_boundaries = extract_faces(mesh, None)
+    except Exception as e:
+        print(f"Warning: Face extraction failed: {e}")
+        print("Returning original mesh without smoothing.")
+        return mesh
     
     if len(walls) == 0:
         print("No wall faces found for smoothing.")
@@ -284,27 +294,47 @@ def smooth_junctions_advanced(mesh, tree_data, vessel_map, connectivity,
         
         # Remesh caps
         caps = []
-        for boundary in boundaries:
+        for i, boundary in enumerate(boundaries):
             if hsize is None:
                 hsize = mesh.hsize if hasattr(mesh, 'hsize') else 0.1
             
-            # Convert to PolyData if needed for remeshing
-            if hasattr(boundary, 'faces'):
-                # Already PolyData
-                boundary_polydata = boundary
-            else:
-                # Convert UnstructuredGrid to PolyData
-                boundary_polydata = boundary.extract_surface()
-            
-            cap = remesh_surface(boundary_polydata, nosurf=True, hsiz=hsize)
-            caps.append(cap)
+            try:
+                # Convert to PolyData if needed for remeshing
+                if hasattr(boundary, 'faces'):
+                    # Already PolyData
+                    boundary_polydata = boundary
+                else:
+                    # Convert UnstructuredGrid to PolyData
+                    boundary_polydata = boundary.extract_surface()
+                
+                # Check if the boundary has enough points for remeshing
+                if boundary_polydata.n_points < 3:
+                    print(f"Warning: Boundary {i} has too few points ({boundary_polydata.n_points}), skipping remeshing")
+                    caps.append(boundary_polydata)
+                    continue
+                
+                cap = remesh_surface(boundary_polydata, nosurf=True, hsiz=hsize)
+                caps.append(cap)
+                
+            except Exception as e:
+                print(f"Warning: Failed to remesh boundary {i}: {e}")
+                print(f"Using original boundary without remeshing")
+                # Use the original boundary if remeshing fails
+                if hasattr(boundary, 'faces'):
+                    caps.append(boundary)
+                else:
+                    caps.append(boundary.extract_surface())
         
         # Merge smoothed walls and caps
-        caps.insert(0, smoothed_mesh)
-        smoothed_mesh = pv.merge(caps)
-        smoothed_mesh.hsize = hsize
-        
-        return smoothed_mesh
+        try:
+            caps.insert(0, smoothed_mesh)
+            smoothed_mesh = pv.merge(caps)
+            smoothed_mesh.hsize = hsize
+            return smoothed_mesh
+        except Exception as e:
+            print(f"Warning: Failed to merge smoothed mesh: {e}")
+            print("Returning original mesh without smoothing.")
+            return mesh
     else:
         # For multiple walls, merge them
         smoothed_mesh = pv.merge(smoothed_walls)
