@@ -44,10 +44,10 @@ cmake_force:
 SHELL = /bin/sh
 
 # The CMake executable.
-CMAKE_COMMAND = /private/var/folders/mg/y730y7y531j29s4k3r0308zm0000gn/T/pip-build-env-gy3h2a_8/overlay/lib/python3.10/site-packages/cmake/data/bin/cmake
+CMAKE_COMMAND = /private/var/folders/mg/y730y7y531j29s4k3r0308zm0000gn/T/pip-build-env-5pgl48bb/overlay/lib/python3.10/site-packages/cmake/data/bin/cmake
 
 # The command to remove a file.
-RM = /private/var/folders/mg/y730y7y531j29s4k3r0308zm0000gn/T/pip-build-env-gy3h2a_8/overlay/lib/python3.10/site-packages/cmake/data/bin/cmake -E rm -f
+RM = /private/var/folders/mg/y730y7y531j29s4k3r0308zm0000gn/T/pip-build-env-5pgl48bb/overlay/lib/python3.10/site-packages/cmake/data/bin/cmake -E rm -f
 
 # Escaping for special characters.
 EQUALS = =

@@ -287,7 +287,16 @@ def smooth_junctions_advanced(mesh, tree_data, vessel_map, connectivity,
         for boundary in boundaries:
             if hsize is None:
                 hsize = mesh.hsize if hasattr(mesh, 'hsize') else 0.1
-            cap = remesh_surface(boundary, nosurf=True, hsiz=hsize)
+            
+            # Convert to PolyData if needed for remeshing
+            if hasattr(boundary, 'faces'):
+                # Already PolyData
+                boundary_polydata = boundary
+            else:
+                # Convert UnstructuredGrid to PolyData
+                boundary_polydata = boundary.extract_surface()
+            
+            cap = remesh_surface(boundary_polydata, nosurf=True, hsiz=hsize)
             caps.append(cap)
         
         # Merge smoothed walls and caps

@@ -3,7 +3,7 @@
 # No other meaning or use of this file is supported.
 
 method=git
-command=/private/var/folders/mg/y730y7y531j29s4k3r0308zm0000gn/T/pip-build-env-gy3h2a_8/overlay/lib/python3.10/site-packages/cmake/data/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/Users/natalia/Desktop/svVascularize/tmp/solver-0d/_deps/pybind11_json-subbuild/pybind11_json-populate-prefix/tmp/pybind11_json-populate-gitclone.cmake
+command=/private/var/folders/mg/y730y7y531j29s4k3r0308zm0000gn/T/pip-build-env-5pgl48bb/overlay/lib/python3.10/site-packages/cmake/data/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/Users/natalia/Desktop/svVascularize/tmp/solver-0d/_deps/pybind11_json-subbuild/pybind11_json-populate-prefix/tmp/pybind11_json-populate-gitclone.cmake
 source_dir=/Users/natalia/Desktop/svVascularize/tmp/solver-0d/_deps/pybind11_json-src
 work_dir=/Users/natalia/Desktop/svVascularize/tmp/solver-0d/_deps
 repository=https://github.com/pybind/pybind11_json.git
