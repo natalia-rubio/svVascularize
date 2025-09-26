@@ -1,0 +1,68 @@
+Metadata-Version: 2.4
+Name: svv
+Version: 0.0.32
+Summary: svVascularize (svv): A synthetic vascular generation, modeling, and simulation package
+Author: Zachary Sexton
+Author-email: zsexton@stanford.edu
+License: MIT
+Keywords: modeling,simulation,tissue-engineering,3d-printing,fluid-dynamics
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Operating System :: POSIX
+Classifier: Operating System :: Unix
+Classifier: Operating System :: MacOS
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: numpy~=1.24.0
+Requires-Dist: scipy~=1.10.1
+Requires-Dist: matplotlib~=3.7.5
+Requires-Dist: Cython~=3.0.7
+Requires-Dist: usearch
+Requires-Dist: scikit-image
+Requires-Dist: tetgen
+Requires-Dist: trimesh[all]
+Requires-Dist: hnswlib
+Requires-Dist: pyvista~=0.44.2
+Requires-Dist: scikit-learn
+Requires-Dist: tqdm
+Requires-Dist: pymeshfix==0.17.0
+Requires-Dist: numexpr
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: keywords
+Dynamic: license
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# svVascularize
+
+
+[![Version](https://img.shields.io/pypi/v/svv.svg?logo=pypi&label=PyPI%20version)](https:://pypi.org/project/svv/)
+![Platform](https://img.shields.io/badge/platform-macOS%20|%20linux%20|%20windows-blue)
+![Latest Release](https://img.shields.io/github/v/release/SimVascular/svVascularize?label=latest)
+[![codecov](https://codecov.io/github/SimVascular/svVascularize/graph/badge.svg)](https://codecov.io/github/SimVascular/svVascularize)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15151168.svg)]()
+[![Docs](https://img.shields.io/badge/docs-gh--pages-brightgreen)](https://simvascular.github.io/svVascularize/)
+
+<p align="left">
+The svVascularize (svv) is an open-source API for automated vascular generation and multi-fidelity hemodynamic simulation
+written in Python. Often small-caliber vessels are difficult or infeasible to obtain from experimental data sources 
+despite playing important roles in blood flow regulation and cell microenvironments. svVascularize aims to provide tissue 
+engineers and computational hemodynamic scientists with de novo vasculature that can easily be applied in 
+biomanufacturing applications or computational fluid dynamic (CFD) analysis.
+</p>
+
+* **Website:** https://simvascular.github.io/svVascularize/
+* **PyPi:** https://pypi.org/project/svv/
+* **Source code:** https://github.com/zasexton/svVascularize

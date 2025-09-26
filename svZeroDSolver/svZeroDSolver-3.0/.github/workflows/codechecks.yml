@@ -1,0 +1,18 @@
+# This workflow checks for compliance with the Google C++ style guide.
+name: Codechecks
+on: [push, pull_request]
+jobs:
+  clang-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install dependencies
+        run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo apt-get install clang-format-19
+      - name: Run clang-format
+        run: |
+          mkdir Release
+          cd Release
+          cmake ..
+          make codecheck

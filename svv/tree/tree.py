@@ -273,7 +273,34 @@ class Tree(object):
     def save(self):
         pass
 
-    def export_solid(self, outdir=None, shell_thickness=0.0, watertight=False, **kwargs):
+    def export_solid(self, outdir=None, shell_thickness=0.0, watertight=False, 
+                    smooth_junctions=True, smoothing_radius_factor=2.0, 
+                    smoothing_iterations=5, **kwargs):
+        """
+        Export the tree as a solid mesh with optional junction smoothing.
+        
+        Parameters
+        ----------
+        outdir : str, optional
+            Output directory for the mesh files
+        shell_thickness : float
+            Thickness of the shell (currently unused)
+        watertight : bool
+            Whether to create a watertight mesh
+        smooth_junctions : bool
+            Whether to apply junction smoothing
+        smoothing_radius_factor : float
+            Factor to determine smoothing radius around junctions
+        smoothing_iterations : int
+            Number of smoothing iterations
+        **kwargs
+            Additional keyword arguments
+            
+        Returns
+        -------
+        model : pyvista.PolyData
+            The exported solid mesh
+        """
         if isinstance(outdir, type(None)):
             if not os.path.exists(os.getcwd() + os.sep + '3d_tmp'):
                 outdir = os.getcwd() + os.sep + '3d_tmp'
@@ -284,9 +311,10 @@ class Tree(object):
                 raise ValueError("Output directory already exists.")
         if not watertight:
             model = build_merged_solid(self)
-
         else:
-            model = build_watertight_solid(self)
+            model = build_watertight_solid(self, smooth_junctions=smooth_junctions,
+                                         smoothing_radius_factor=smoothing_radius_factor,
+                                         smoothing_iterations=smoothing_iterations)
         return model
 
 
@@ -300,4 +328,16 @@ class Tree(object):
 
     def export_centerline(self):
         pass
+
+    def get_junction_statistics(self):
+        """
+        Get statistics about junctions in the tree.
+        
+        Returns
+        -------
+        stats : dict
+            Dictionary containing junction statistics
+        """
+        from svv.tree.utils.junction_smoothing import get_junction_statistics
+        return get_junction_statistics(self.data, self.vessel_map, self.connectivity)
 

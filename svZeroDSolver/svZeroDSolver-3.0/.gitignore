@@ -1,0 +1,40 @@
+# Python
+__pycache__
+*.pyc
+
+# simulation output
+*.csv
+
+# macOS file system
+.DS_Store
+
+# Patches
+*.diff
+/dist
+*.egg-info
+
+# Testing
+.coverage*
+/htmlcov
+*.prof
+*.vscode
+public
+
+# Documentation
+docs/build
+
+# C++ build and externals directories
+Release*/
+Debug*/
+externals/
+*.so
+build*/
+
+# IDE
+.cproject
+.project
+.settings
+*.swp
+
+# Node modules (for directed graph visualization)
+node_modules/

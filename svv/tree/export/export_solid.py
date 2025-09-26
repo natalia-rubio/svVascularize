@@ -5,6 +5,7 @@ from tqdm import trange
 from scipy.interpolate import splprep, splev
 from svv.utils.remeshing.remesh import remesh_surface
 from svv.domain.routines.boolean import boolean
+from svv.tree.utils.junction_smoothing import smooth_junctions_advanced, get_junction_statistics
 
 def get_longest_path(data, seed_edge):
     dig = True
@@ -384,7 +385,8 @@ def union_tubes(tubes, lines, cap_resolution=40):
     return model
 
 
-def build_watertight_solid(tree, cap_resolution=40):
+def build_watertight_solid(tree, cap_resolution=40, smooth_junctions=True, 
+                          smoothing_radius_factor=2.0, smoothing_iterations=5):
     """
     This function builds a solid surface mesh from a given vascular tree object.
     This mesh should be guaranteed to be watertight and define a closed manifold.
@@ -393,6 +395,14 @@ def build_watertight_solid(tree, cap_resolution=40):
     ----------
     tree : svtoolkit.tree.tree.Tree
         A vascular tree object.
+    cap_resolution : int
+        Resolution for cap remeshing
+    smooth_junctions : bool
+        Whether to apply junction smoothing
+    smoothing_radius_factor : float
+        Factor to determine smoothing radius around junctions
+    smoothing_iterations : int
+        Number of smoothing iterations
 
     Returns
     -------
@@ -403,6 +413,25 @@ def build_watertight_solid(tree, cap_resolution=40):
     lines = generate_polylines(xyz, r)
     tubes = generate_tubes(lines)
     model = union_tubes(tubes, lines, cap_resolution=cap_resolution)
+    
+    # Apply junction smoothing if requested
+    if smooth_junctions:
+        print("Applying junction smoothing...")
+        # Get junction statistics
+        junction_stats = get_junction_statistics(tree.data, tree.vessel_map, tree.connectivity)
+        print(f"Junction statistics: {junction_stats}")
+        
+        # Apply smoothing
+        model = smooth_junctions_advanced(
+            model, 
+            tree.data, 
+            tree.vessel_map, 
+            tree.connectivity,
+            hsize=model.hsize if hasattr(model, 'hsize') else None,
+            cap_resolution=cap_resolution
+        )
+        print("Junction smoothing completed.")
+    
     # Remove poor quality elements and repair the mesh.
     cell_quality = model.compute_cell_quality(quality_measure='scaled_jacobian')
     keep = cell_quality.cell_data["CellQuality"] > 0.1
