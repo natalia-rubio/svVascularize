@@ -69,6 +69,33 @@
          These, as well as surface mesh unioning operations, are non-trivial and may take minutes-hours to complete.
          Users can supply custom meshing parameters for their applications to override default values this may result
          in more efficient meshing, but it is recommended that default parameters are attemped first.</div>
+     <p>Once meshes exist, identify wall and outlet patches that become boundary conditions. The
+         <code>Simulation.extract_faces()</code> routine wraps <code>svv.simulation.utils.extract_faces</code> to label
+         surfaces on both the solid model and the tetrahedral mesh.</p>
+     <pre data-copy> <code class="language-python"># Detect walls, outlets, and shared boundaries
+sim.extract_faces(crease_angle=60.0)
+
+# Inspect names stored in the GeneralMesh container
+print(sim.fluid_domain_meshes[0].faces.keys())</code></pre>
+     <p>Finally, assemble the svFSI configuration and write everything to disk. The default output directory is created if
+         it does not exist.</p>
+     <pre data-copy> <code class="language-python"># Build and persist 3-D CFD input files
+sim.construct_3d_fluid_simulation()
+sim.write_3d_fluid_simulation()
+
+# Result: meshes + XML under sim.file_path (e.g. ./simulations/example/)</code></pre>
+     <div class="callout info"><strong>Directory layout:</strong> The export creates a <code>mesh/</code> folder containing
+         the volume grid (<code>.vtu</code> or <code>.vtp</code>), a <code>mesh-surfaces/</code> folder for each named face, and
+         a <code>fluid_simulation_0-0.xml</code> svFSI input file.</div>
+     <p>For rapid prototyping, couple the same tree to the reduced-order solvers shipped with SimVascular.</p>
+     <pre data-copy> <code class="language-python">from svv.simulation.fluid.rom.zero_d.zerod_tree import export_0d_simulation
+
+export_0d_simulation(t, outdir=sim.file_path + "/rom_0d")
+
+# Optionally stage 1-D parameters for multi-scale workflows
+sim.construct_1d_fluid_simulation(time_step_size=1e-3, number_time_steps=2000)</code></pre>
+     <div class="callout warning"><strong>Note:</strong> Writing of 1-D files is not yet automated. The parameter bundle
+         returned by <code>construct_1d_fluid_simulation()</code> can be passed to the SimVascular 1-D solver tools.</div>
  </main>
   <footer>
     <div class="container">

@@ -71,6 +71,20 @@
       <li><a href="https://github.com/SimVascular/svVascularize/issues" target="_blank" rel="noopener">GitHub Issues</a></li>
     </ul>
 
+    <h3 id="simulation">Simulation Overview</h3>
+    <p>The <code>Simulation</code> module mirrors the capabilities in the library today:</p>
+    <ul>
+      <li><a href="pipeline.html">3-D CFD pipeline</a> &mdash; full workflow from <code>build_meshes()</code> through
+        <code>write_3d_fluid_simulation()</code>, including boundary layer options and multi-tree exports.</li>
+      <li><a href="api/simulation.html">Simulation API reference</a> &mdash; method-by-method detail on mesh storage,
+        face extraction, and svFSI XML generation.</li>
+      <li><a href="quickstart.html#export-0d-simulation-files">0-D exports</a> &mdash; use
+        <code>svv.simulation.fluid.rom.zero_d</code> helpers for fast circuit models; 1-D parameter builders are also
+        included in <code>Simulation.construct_1d_fluid_simulation()</code> for multiscale coupling.</li>
+    </ul>
+    <div class="callout info"><strong>Tip:</strong> 0-D and 1-D solvers are shipped separately; see the installation
+      guide&rsquo;s <a href="install.html#simulation">simulation extras</a> for setup notes.</div>
+
   </main>
 
   <!-- Footer -->

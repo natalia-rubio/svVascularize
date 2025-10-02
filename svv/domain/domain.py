@@ -59,6 +59,72 @@ class Domain(object):
         if len(args) > 0:
             self.set_data(*args, **kwargs)
 
+    # ---------------------------
+    # Persistence: .dmn format
+    # ---------------------------
+    def save(self, path, include_boundary=False, include_mesh=False, include_patch_normals=True):
+        """
+        Save this Domain to a custom .dmn file.
+
+        Parameters
+        ----------
+        path : str
+            Output filename. If no extension is provided, ".dmn" is appended.
+        include_boundary : bool, optional
+            When True, persist the boundary mesh arrays (points + faces/lines) so
+            visualization can be restored without recomputation. Requires pyvista
+            at load time. Default False.
+        include_mesh : bool, optional
+            When True, persist the interior mesh arrays (nodes + connectivity) so
+            interior sampling and mesh metrics can be restored without recomputation.
+            Requires pyvista and scikit-learn (BallTree) at load time. Default False.
+        include_patch_normals : bool, optional
+            When True (default), include per‑patch normals (if available) alongside
+            patch points to fully restore Patch objects on load. This enables a
+            subsequent `Domain.build()` to use reconstructed patches rather than
+            the stored fast‑eval arrays.
+
+        Notes
+        -----
+        - The .dmn container is a compressed NumPy archive written with the .dmn
+          extension. It contains precomputed arrays (A/B/C/D/PTS) used by the fast
+          evaluator and metadata necessary to rebuild the k‑d tree and optional
+          boundary/mesh. Ensure `create()`, `solve()`, and `build()` have run so
+          these arrays exist; otherwise save() will raise an error.
+        - Boundary and mesh persistence are optional to keep files compact.
+        """
+        from svv.domain.io.dmn import write_dmn
+        write_dmn(self, path, include_boundary=include_boundary, include_mesh=include_mesh,
+                  include_patch_normals=include_patch_normals)
+
+    @classmethod
+    def load(cls, path):
+        """
+        Load a Domain from a .dmn file produced by `save`.
+
+        Parameters
+        ----------
+        path : str
+            Path to a .dmn file.
+
+        Returns
+        -------
+        Domain
+            A fully initialized Domain instance:
+            - Ready for fast evaluation via `__call__` (evaluate_fast path).
+            - With `function_tree` rebuilt.
+            - With `patches` reconstructed from stored arrays (including per‑patch
+              normals when saved), enabling you to call `build()` again to derive
+              boundary/mesh artifacts in the usual workflow.
+
+        Notes
+        -----
+        If boundary/mesh were stored, they are also reconstructed to speed up
+        visualization and interior point queries.
+        """
+        from svv.domain.io.dmn import read_dmn
+        return read_dmn(path)
+
     def set_data(self, *args, **kwargs):
         """
         Set the data for the domain from point-wise data
@@ -143,6 +209,30 @@ class Domain(object):
         """
         resolution = kwargs.get('resolution', 25)
         skip_boundary = kwargs.get('skip_boundary', False)
+        # If this Domain was loaded from a .dmn file, it already has
+        # A/B/C/D/PTS and possibly a function_tree. In that case, skip
+        # rebuilding from patches (which will be empty) and only ensure
+        # downstream artifacts as requested.
+        if len(getattr(self, 'patches', [])) == 0 and hasattr(self, 'PTS'):
+            if getattr(self, 'function_tree', None) is None:
+                # Reconstruct a function_tree from stored PTS arrays
+                # PTS shape: (n_patches, max_pts, 1, 1, 1, d)
+                pts = self.PTS[:, :, 0, 0, 0, :]
+                # Find the first non-NaN point per patch
+                firsts = []
+                for i in range(pts.shape[0]):
+                    valid = np.any(~np.isnan(pts[i]), axis=1)
+                    if np.any(valid):
+                        firsts.append(pts[i][np.argmax(valid)])
+                if len(firsts) == 0:
+                    raise ValueError("Loaded domain lacks valid PTS to rebuild function_tree.")
+                self.function_tree = cKDTree(np.asarray(firsts))
+            if self.random_generator is None:
+                self.set_random_generator()
+            if not skip_boundary:
+                self.get_boundary(resolution)
+                self.get_interior()
+            return None
         functions = []
         firsts = []
         for patch in self.patches:
@@ -464,7 +554,7 @@ class Domain(object):
             self.area = _mesh.area
             self.volume = 0.0
         elif self.points.shape[1] == 3:
-            _mesh, nodes, vertices = tetrahedralize(self.boundary, verbose=verbose, **kwargs)
+            _mesh, nodes, vertices = tetrahedralize(self.boundary, order=1, nobisect=True, verbose=verbose, **kwargs)
             _mesh = _mesh.compute_cell_sizes()
             _mesh.cell_data['Normalized_Volume'] = (_mesh.cell_data['Volume'] / sum(_mesh.cell_data['Volume']))
             self.all_mesh_cells = list(range(_mesh.n_cells))

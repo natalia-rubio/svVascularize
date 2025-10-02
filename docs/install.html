@@ -47,7 +47,7 @@
       <pre data-copy><code class="language-shell">python -m pip install --upgrade pip  # upgrade installer
 python -m pip install svv</code></pre>
       <p>This installs the <em>core</em> pre-built synthetic vascular-generation wheel from PyPI.</p>
-      <div class="callout"><strong>Need hemodynamics solvers?</strong> They are not included by default—see <a href="#optional-solvers">Optional solvers</a>.</div>
+      <div class="callout"><strong>Need hemodynamics solvers?</strong> They are not included by default—see <a href="#simulation">Simulation extras</a>.</div>
     </section>
 
     <!-- REQUIREMENTS -->
@@ -152,11 +152,12 @@ python -m pip install -e .[dev]</code></pre>
     </section>
 
     <!-- SOLVERS -->
-    <section id="optional-solvers">
-      <h2>Optional Hemodynamic CFD / ROM solvers</h2>
-          <p>The <b>svVascularize</b> Python API is solver-agnostic. For
-     flow analysis you can link to the SimVascular solver
-     family shown in the table:</p>
+    <section id="simulation">
+      <h2>Simulation extras</h2>
+          <p>The <b>svVascularize</b> Python API is solver-agnostic. The
+     <code>Simulation</code> container prepares meshes and svFSI XML files, while helper functions in
+     <code>svv.simulation.fluid.rom</code> emit 0-D circuits. To actually march solutions forward you can link to the
+     SimVascular solvers below:</p>
 
   <table>
     <thead><tr>
@@ -177,6 +178,10 @@ python -m pip install -e .[dev]</code></pre>
           <td>CMake ≥ 3.20, VTK ≥ 9, MPI, BLAS, LAPACK</td></tr>
     </tbody>
   </table>
+        <div class="callout info"><strong>Tip:</strong> After calling <code>Simulation.construct_3d_fluid_simulation()</code>
+          use <code>Simulation.write_3d_fluid_simulation()</code> to emit meshes and <code>fluid_simulation_*.xml</code> files that
+          svFSI consumes directly. The ROM helpers write JSON/<code>.flow</code> data next to the geometry so you can drive
+          multiscale studies from the same tree.</div>
           <!-- 0-D install -->
   <h3 id="solver-0d"><code>svZeroDSolver</code></h3>
   <p>Pre-built wheels do not yet exist for this solver;

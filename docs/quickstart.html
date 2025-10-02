@@ -55,7 +55,7 @@ t.show(plot_domain=True)</code></pre>
       <img src="graphics/quickstart_orbit.gif" alt="Orbit around vascular tree" width="300" />
       <figcaption> Rotating view of the generated vascular tree </figcaption>
     </figure>
-    <h3>Export 0‑D simulation files</h3>
+    <h3 id="export-0d-simulation-files">Export 0‑D simulation files</h3>
     <pre data-copy><code class="language-python">from svv.simulation.fluid.rom.zero_d.zerod_tree import export_0d_simulation
 
 export_0d_simulation(t, outdir="my_tree_0d")
@@ -105,7 +105,7 @@ f.connections.tree_connections[0].show().show()</code></pre>
       <img src="graphics/quickstart_forest_connected_orbit.gif" alt="Orbit around connected vascular forest" width="400" />
       <figcaption> Rotating view of the connected vascular forest </figcaption>
     </figure>
-  <h3>Export 0-D simulation files</h3>
+  <h3 id="export-0d-forest">Export 0-D simulation files</h3>
       <p>Because a forest object may contain multiple fluid networks, it is important to specify which network a user wants
       to export for simulation as well as the inlet boundaries. These are the second and thrid positional arguments of the
       simulation exporting function, respectively. </p>

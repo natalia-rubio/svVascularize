@@ -19,19 +19,26 @@ class Patch:
         self.rbf_degree = 3
         self.lam = lam
 
-    def set_data(self, *args):
+    def set_data(self, *args, **kwargs):
         """
         Set the data for the domain.
         """
+        create_kernel = kwargs.get('create_kernel', True)
         if len(args) > 1:
             self.points = args[0]
             self.normals = args[1]
-            self.kernel = Kernel(self.points, lam=self.lam)
-            self.kernel.set_initial_values(self.normals)
+            if create_kernel:
+                self.kernel = Kernel(self.points, lam=self.lam)
+                self.kernel.set_initial_values(self.normals)
+            else:
+                self.kernel = None
         elif len(args) > 0:
             self.points = args[0]
-            self.kernel = Kernel(self.points, lam=self.lam)
-            self.kernel.set_initial_values()
+            if create_kernel:
+                self.kernel = Kernel(self.points, lam=self.lam)
+                self.kernel.set_initial_values()
+            else:
+                self.kernel = None
         else:
             print("Error: No data provided.")
         return None
@@ -68,14 +75,18 @@ class Patch:
         Build the interpolation function for the patch object
         :return:
         """
-        a = np.array(self.constants[:self.kernel.n])
-        b = np.array(self.constants[self.kernel.n:self.kernel.n * (self.kernel.d + 1)].reshape(self.kernel.n, self.kernel.d))
-        c = np.array(self.constants[self.kernel.n * (self.kernel.d + 1):self.kernel.n * (self.kernel.d + 1) + self.kernel.d])
+        # Avoid heavy kernel builds if constants are already present by
+        # deriving sizes from points directly.
+        n = self.points.shape[0]
+        d_dim = self.points.shape[1]
+        a = np.array(self.constants[:n])
+        b = np.array(self.constants[n:n * (d_dim + 1)].reshape(n, d_dim))
+        c = np.array(self.constants[n * (d_dim + 1):n * (d_dim + 1) + d_dim])
         d = np.array(self.constants[-1])
         a = a.reshape(a.shape + (1,) * self.kernel.d)
         b = b.reshape(tuple([b.shape[0]]) + (1,) * self.kernel.d + tuple([b.shape[1]]))
         c = c.reshape((1,) * self.kernel.d + c.shape)
-        pts = np.array(self.points.reshape(tuple([self.points.shape[0]]) + (1,) * self.kernel.d + tuple([self.points.shape[1]])))
+        pts = np.array(self.points.reshape((n,) + (1,) * d_dim + (d_dim,)))
         def f(x, a_=a, b_=b, c_=c, d_=d, points=pts, show=False):
             """
             Interpolation function for a patch of the domain.
@@ -134,7 +145,7 @@ class Patch:
             f.normals = self.normals
         else:
             f.normals = self.solver.get_normals()
-        f.dimensions = self.kernel.d
+        f.dimensions = d_dim
         f.min = np.min(self.points, axis=0)
         f.max = np.max(self.points, axis=0)
         f.centroid = np.mean(self.points, axis=0)
@@ -143,4 +154,7 @@ class Patch:
         f.b = b
         f.c = c
         f.d = d
+        # attach normals when available to support serialization
+        if getattr(self, 'normals', None) is not None:
+            f.normals = self.normals
         return f

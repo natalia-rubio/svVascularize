@@ -46,6 +46,26 @@
   </section>
 
 
+  <section id="simulation" class="content">
+    <div class="container">
+      <h3>Simulation Workflows</h3>
+      <p>The <code>svv.simulation.Simulation</code> container turns generated trees and forests into ready-to-run
+        solver input. It automates mesh generation, boundary extraction, and svFSI configuration so you can move from a
+        synthetic network to a 3-D CFD job without leaving Python.</p>
+      <ul>
+        <li><strong>3D CFD:</strong> build watertight tet meshes, optional boundary layers, extract wall/outlet faces,
+          and emit svFSI XML plus surface/volume mesh files.</li>
+        <li><strong>Multi-tree support:</strong> forests are handled tree-by-tree, letting you select which networks to
+          mesh and export.</li>
+        <li><strong>Reduced-order:</strong> direct helpers in <code>svv.simulation.fluid.rom</code> export matching 0-D
+          circuits today, with 1-D parameter generation available for coupling work.</li>
+      </ul>
+      <div class="callout info"><strong>Need details?</strong> The <a href="pipeline.html">3-D pipeline</a> and <a href="api/simulation.html">Simulation API</a> pages walk through every step, from
+        <code>build_meshes()</code> to writing solver files.</div>
+    </div>
+  </section>
+
+
   <footer>
     <div class="container">
       <p>&copy; 2025 SimVascular, Stanford University, The Regents of the University of California, and others —

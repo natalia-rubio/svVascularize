@@ -26,6 +26,12 @@ class BDistWheelCmd(_bdist_wheel):
         self.run_command("build_ext")
         super().run()
         
+def env_flag(name: str, default: bool = False) -> bool:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return str(val).strip().lower() in {"1", "true", "yes", "y", "on"}
+
 def get_filename_without_ext(abs_path):
     base_name = os.path.basename(abs_path)      # e.g. "file.txt"
     file_name_no_ext = os.path.splitext(base_name)[0]  # e.g. "file"
@@ -313,16 +319,19 @@ def build_0d(num_cores=None):
             print(f"Downloading {download_url_0d}...")
             urlretrieve(download_url_0d, tarball_path_0d)
     except Exception as e:
-        raise RuntimeError("Error downloading solver archives.") from e
+        raise RuntimeError("Error downloading svZeroDSolver archive.") from e
 
     try:
         if not os.path.exists(source_path_0d):
             with tarfile.open(tarball_path_0d, "r:gz") as t:
                 t.extractall(source_path_0d)
     except Exception as e:
-        raise RuntimeError("Error extracting solver archives.") from e
+        raise RuntimeError("Error extracting svZeroDSolver archive.") from e
 
     build_dir_0d = os.path.abspath("tmp/solver-0d")
+    # Ensure a clean build to avoid FetchContent update errors (e.g., eigen rebase)
+    if os.path.isdir(build_dir_0d):
+        shutil.rmtree(build_dir_0d, ignore_errors=True)
     os.makedirs(build_dir_0d, exist_ok=True)
 
     # On Windows, pick a Visual Studio generator if possible
@@ -341,11 +350,11 @@ def build_0d(num_cores=None):
     ]
 
     # Run configure step
-    print("Configuring mmg with CMake:", " ".join(cmake_cmd))
+    print("Configuring svZeroDSolver with CMake:", " ".join(cmake_cmd))
     try:
         subprocess.check_call(cmake_cmd)
     except subprocess.CalledProcessError as e:
-        raise RuntimeError("CMake configure failed for mmg.") from e
+        raise RuntimeError("CMake configure failed for svZeroDSolver.") from e
 
     # Run build step
     build_cmd = [
@@ -383,154 +392,24 @@ def build_0d(num_cores=None):
 
 class DownloadAndBuildExt(build_ext):
     def run(self):
-        #------------------------------
-        # Get MMG Remeshing Source Code
-        #------------------------------
-        build_mmg()
-        build_0d()
-        # -----------------------------
-        # 1. Download: handle errors
-        # -----------------------------
-        if not platform.system().lower().startswith("win"):
-            """
-            download_url_0d = "https://github.com/SimVascular/svZeroDSolver/archive/refs/tags/v2.0.tar.gz"
-            download_url_1d = "https://github.com/SimVascular/svOneDSolver/archive/refs/tags/c9caded.tar.gz"
-            download_url_3d = "https://github.com/SimVascular/svMultiPhysics/archive/refs/tags/March_2025.tar.gz"
+        # Make external tool builds opt-in to avoid brittle installs and network fetches
+        build_mmg_flag = env_flag("SVV_BUILD_MMG", False)
+        build_0d_flag = env_flag("SVV_BUILD_SOLVER_0D", False) or env_flag("SVV_BUILD_SOLVERS", False)
 
-            tarball_path_0d = "svZeroDSolver.tar.gz"
-            tarball_path_1d = "svOneDSolver.tar.gz"
-            tarball_path_3d = "svMultiPhysics.tar.gz"
-
+        if build_mmg_flag:
             try:
-                if not os.path.exists(tarball_path_0d):
-                    print(f"Downloading {download_url_0d}...")
-                    urlretrieve(download_url_0d, tarball_path_0d)
-                if not os.path.exists(tarball_path_1d):
-                    print(f"Downloading {download_url_1d}...")
-                    urlretrieve(download_url_1d, tarball_path_1d)
-                if not os.path.exists(tarball_path_3d):
-                    print(f"Downloading {download_url_3d}...")
-                    urlretrieve(download_url_3d, tarball_path_3d)
+                build_mmg(num_cores=num_cores)
             except Exception as e:
-                raise RuntimeError("Error downloading solver archives.") from e
+                print(f"Warning: MMG build failed ({e}). Continuing without building MMG.")
 
-            # -----------------------------
-            # 2. Extract: handle errors
-            # -----------------------------
-            source_path_0d = os.path.abspath("svZeroDSolver")
-            source_path_1d = os.path.abspath("svOneDSolver")
-            source_path_3d = os.path.abspath("svMultiPhysics")
-
+        if build_0d_flag:
             try:
-                if not os.path.exists(source_path_0d):
-                    with tarfile.open(tarball_path_0d, "r:gz") as t:
-                        t.extractall(source_path_0d)
-                if not os.path.exists(source_path_1d):
-                    with tarfile.open(tarball_path_1d, "r:gz") as t:
-                        t.extractall(source_path_1d)
-                if not os.path.exists(source_path_3d):
-                    with tarfile.open(tarball_path_3d, "r:gz") as z:
-                        z.extractall(source_path_3d)
+                build_0d(num_cores=num_cores)
             except Exception as e:
-                raise RuntimeError("Error extracting solver archives.") from e
+                print(f"Warning: svZeroDSolver build failed ({e}). Continuing without building solver.")
 
-            # -----------------------------
-            # 3. Configure & build with CMake
-            # -----------------------------
-            build_dir    = os.path.abspath("bin")
-            build_dir_0d = os.path.abspath("bin/solver-0d")
-            build_dir_1d = os.path.abspath("bin/solver-1d")
-            build_dir_3d = os.path.abspath("bin/solver-3d")
-
-            os.makedirs(build_dir_0d, exist_ok=True)
-            os.makedirs(build_dir_1d, exist_ok=True)
-            os.makedirs(build_dir_3d, exist_ok=True)
-
-            # For each solver, configure and build. Catch errors if subprocess fails.
-            try:
-                subprocess.check_call(["cmake", f"-B{build_dir_0d}", f"-S{os.path.join(source_path_0d, 'svZeroDSolver-2.0')}"])
-                subprocess.check_call(["cmake", f"-B{build_dir_1d}", f"-S{os.path.join(source_path_1d, 'svOneDSolver-c9caded')}"])
-                subprocess.check_call(["cmake", f"-B{build_dir_3d}", f"-S{os.path.join(source_path_3d, 'svMultiPhysics-March_2025')}"])
-
-                subprocess.check_call(["cmake", "--build", build_dir_0d, "--parallel", str(num_cores)])
-                subprocess.check_call(["cmake", "--build", build_dir_1d, "--parallel", str(num_cores)])
-                subprocess.check_call(["cmake", "--build", build_dir_3d, "--parallel", str(num_cores)])
-            except subprocess.CalledProcessError as e:
-                raise RuntimeError("CMake configure or build failed for one of the solvers.") from e
-
-            # -----------------------------
-            # 4. Verify executables
-            # -----------------------------
-            solver_0d_name = "svzerodsolver"
-            solver_1d_name = "OneDSolver"
-            solver_3d_name = "svmultiphysics"
-
-            solver_0d_path = os.path.join(build_dir_0d, solver_0d_name)
-            solver_1d_path = os.path.join(build_dir_1d, "bin", solver_1d_name)
-            solver_3d_path = os.path.join(build_dir_3d, "svMultiPhysics-build", "bin", solver_3d_name)
-            # If the build failed or never produced the exe, raise an error
-            missing = []
-            if not os.path.isfile(solver_0d_path):
-                missing.append(solver_0d_path)
-            if not os.path.isfile(solver_1d_path):
-                missing.append(solver_1d_path)
-            if not os.path.isfile(solver_3d_path):
-                missing.append(solver_3d_path)
-
-            if missing:
-                raise RuntimeError(
-                    "ERROR: Some solvers did not build correctly. Missing:\n  "
-                    + "\n  ".join(missing)
-                )
-
-            # --------------------------------
-            # 5. Copy executables into package
-            # --------------------------------
-            solvers_dir = os.path.join("svv", "solvers")
-            os.makedirs(solvers_dir, exist_ok=True)
-            try:
-                shutil.copy2(solver_0d_path, os.path.join(solvers_dir, solver_0d_name))
-                shutil.copy2(solver_1d_path, os.path.join(solvers_dir, solver_1d_name))
-                shutil.copy2(solver_3d_path, os.path.join(solvers_dir, solver_3d_name))
-            except Exception as e:
-                raise RuntimeError("Failed copying solver executables to package directory.") from e
-
-            # ----------------------------------
-            # 6. CLEANUP if everything succeeded
-            # ----------------------------------
-            # We'll remove archives + source folders now that we have the built executables.
-            try:
-                # Remove the archives
-                if os.path.isfile(tarball_path_0d):
-                    os.remove(tarball_path_0d)
-                if os.path.isfile(tarball_path_1d):
-                    os.remove(tarball_path_1d)
-                if os.path.isfile(tarball_path_3d):
-                    os.remove(tarball_path_3d)
-
-                # Remove the source directories
-                if os.path.isdir(source_path_0d):
-                    shutil.rmtree(source_path_0d, ignore_errors=True)
-                if os.path.isdir(source_path_1d):
-                    shutil.rmtree(source_path_1d, ignore_errors=True)
-                if os.path.isdir(source_path_3d):
-                    shutil.rmtree(source_path_3d, ignore_errors=True)
-
-                # Remove the temporary build directories
-                if os.path.isdir(build_dir):
-                    shutil.rmtree(build_dir, ignore_errors=True)
-
-                print("Cleanup complete: Removed source folders, downloaded archives, and temporary build directories.")
-            except Exception as e:
-                # Usually you might just print a warning. We'll raise to be explicit.
-                raise RuntimeError("Warning: Cleanup of archives/folders failed.") from e
-            """
-            super().run()
-        else:
-            # -----------------------------------
-            # 7. Let the normal build_ext proceed
-            # -----------------------------------
-            super().run()
+        # Always proceed to build Cython extensions
+        super().run()
 
     def finalize_options(self):
         super().finalize_options()

@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C/C++ artifacts from Cython builds
+*.so
+*.pyd
+*.dll
+*.dylib
+*.o
+*.a
+*.cpp
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+
+# Local caches and temp
+tmp/
+.idea/
+
+# Local binaries and downloads
+svv/bin/
+svZeroDSolver*
+
+# Sample artifacts
+cube.dmn
