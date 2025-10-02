@@ -354,7 +354,7 @@ def generate_tubes(polylines, hsize=None):
     return tubes
 
 
-def union_tubes(tubes, lines, cap_resolution=40):
+def union_tubes(tubes, lines, cap_resolution=10):
     """
     This function performs iterative boolean union operations on a list of Pyvista polydata surface
     meshes to build one single surface mesh representing the entire vascular object.
@@ -385,8 +385,8 @@ def union_tubes(tubes, lines, cap_resolution=40):
     return model
 
 
-def build_watertight_solid(tree, cap_resolution=40, smooth_junctions=True, 
-                          smoothing_radius_factor=2.0, smoothing_iterations=5):
+def build_watertight_solid(tree, cap_resolution=10, smooth_junctions=True, 
+                          smoothing_radius_factor=2.0, smoothing_iterations=30):
     """
     This function builds a solid surface mesh from a given vascular tree object.
     This mesh should be guaranteed to be watertight and define a closed manifold.
@@ -422,7 +422,7 @@ def build_watertight_solid(tree, cap_resolution=40, smooth_junctions=True,
         print(f"Junction statistics: {junction_stats}")
         
         # Apply smoothing
-        model = smooth_junctions_advanced(
+        model, junction_regions = smooth_junctions_advanced(
             model, 
             tree.data, 
             tree.vessel_map, 
@@ -445,7 +445,7 @@ def build_watertight_solid(tree, cap_resolution=40, smooth_junctions=True,
         hsize = model.hsize
         model = fix.mesh.compute_normals(auto_orient_normals=True)
         model.hsize = hsize
-    return model
+    return model, junction_regions
 
 
 def build_merged_solid(tree):

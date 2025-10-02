@@ -70,12 +70,16 @@ FetchContent_Declare(
   GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
   GIT_TAG master
   GIT_SHALLOW TRUE
-  GIT_PROGRESS TRUE)
+  GIT_PROGRESS TRUE
+  UPDATE_COMMAND ""   # disables the ExternalProject update step
+  GIT_CONFIG core.autocrlf=false core.filemode=false
+  )
 
 set(EIGEN_BUILD_DOC OFF)
 set(BUILD_TESTING OFF)
 set(EIGEN_BUILD_PKGCONFIG OFF)
-set( OFF)
+# set( OFF)
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 FetchContent_MakeAvailable(Eigen)
 

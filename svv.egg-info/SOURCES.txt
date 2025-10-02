@@ -127,6 +127,8 @@ svv/tree/utils/c_obb.pyx
 svv/tree/utils/c_update.cpp
 svv/tree/utils/c_update.pyx
 svv/tree/utils/junction_smoothing.py
+svv/tree/utils/refine_tetgen_regions.py
+svv/tree/utils/refinement_helpers.py
 svv/utils/__init__.py
 svv/utils/remeshing/__init__.py
 svv/utils/remeshing/remesh.py

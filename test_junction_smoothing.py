@@ -70,7 +70,7 @@ def test_mesh_export_with_smoothing():
     # Export with smoothing
     print("Exporting mesh with smoothing...")
     mesh_smooth = tree.export_solid(watertight=True, smooth_junctions=True, 
-                                   smoothing_radius_factor=2.0, smoothing_iterations=5)
+                                   smoothing_radius_factor=2.0, smoothing_iterations=30)
     print(f"Mesh with smoothing: {mesh_smooth.n_points} points, {mesh_smooth.n_cells} cells")
     
     return mesh_no_smooth, mesh_smooth

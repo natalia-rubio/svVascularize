@@ -200,7 +200,7 @@ class TreeConnection:
         plotter.add_mesh(self.forest.domain.boundary, color='grey', opacity=0.15)
         return plotter
 
-    def export_solid(self, cap_resolution=40, extrude_roots = False):
+    def export_solid(self, cap_resolution=10, extrude_roots = False):
         network_branches = []
         network_points = []
         network_radii = []

@@ -36,7 +36,7 @@ set(number_of_tries 0)
 while(error_code AND number_of_tries LESS 3)
   execute_process(
     COMMAND "/usr/bin/git"
-            clone --no-checkout --depth 1 --no-single-branch --progress --config "advice.detachedHead=false" "https://gitlab.com/libeigen/eigen.git" "eigen-src"
+            clone --no-checkout --depth 1 --no-single-branch --progress --config "advice.detachedHead=false" --config "core.autocrlf=false" --config "core.filemode=false" "https://gitlab.com/libeigen/eigen.git" "eigen-src"
     WORKING_DIRECTORY "/Users/natalia/Desktop/svVascularize/tmp/solver-0d/_deps"
     RESULT_VARIABLE error_code
     ${maybe_show_command}

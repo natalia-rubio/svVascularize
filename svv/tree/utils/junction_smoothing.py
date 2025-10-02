@@ -4,7 +4,8 @@ Junction smoothing utilities for vascular tree meshes.
 This module provides functionality to detect vessel junctions and apply
 smoothing algorithms to improve mesh quality at intersection points.
 """
-
+from __future__ import annotations
+import pdb
 import numpy as np
 import pyvista as pv
 from typing import List, Dict, Tuple, Optional
@@ -12,7 +13,38 @@ from collections import defaultdict
 import pymeshfix
 from svv.utils.remeshing.remesh import remesh_surface
 from svv.simulation.utils.extract_faces import extract_faces
+import pyvista as pv
+from pyvista import examples
+mesh = examples.download_bunny_coarse().triangulate().clean()
 
+cpos = [
+    (-0.02788175062966399, 0.19293295656233056, 0.4334449972621349),
+    (-0.053260899930287015, 0.08881197167521734, -9.016948161029588e-05),
+    (-0.10170607813337212, 0.9686438023715356, -0.22668272496584665),
+]
+def plot_subdivisions(mesh, a, b):
+    display_args = dict(show_edges=True, color=True)
+    p = pv.Plotter(shape=(3, 3))
+
+    for i in range(3):
+        p.subplot(i, 0)
+        p.add_mesh(mesh, **display_args)
+        p.add_text('Original Mesh')
+
+    def row_plot(row, subfilter):
+        subs = [a, b]
+        for i in range(2):
+            p.subplot(row, i + 1)
+            p.add_mesh(mesh.subdivide(subs[i], subfilter=subfilter), **display_args)
+            p.add_text(f'{subfilter} subdivision of {subs[i]}')
+
+    row_plot(0, 'linear')
+    row_plot(1, 'butterfly')
+    row_plot(2, 'loop')
+
+    p.link_views()
+    p.view_isometric()
+    return p
 
 def detect_junctions(tree_data, vessel_map, connectivity, tolerance=1e-6):
     """
@@ -37,12 +69,14 @@ def detect_junctions(tree_data, vessel_map, connectivity, tolerance=1e-6):
         Array of junction point coordinates
     """
     junctions = defaultdict(list)
+    junction_radii = {}
     junction_coords = []
     
     # Get all vessel endpoints
     proximal_points = tree_data.get('proximal')
     distal_points = tree_data.get('distal')
-    
+    radii = tree_data.get('radius')
+
     # Create a mapping from coordinates to vessel indices
     point_to_vessels = defaultdict(list)
     
@@ -60,13 +94,14 @@ def detect_junctions(tree_data, vessel_map, connectivity, tolerance=1e-6):
     for coord, vessel_list in point_to_vessels.items():
         if len(vessel_list) > 1:  # Multiple vessels meet at this point
             junctions[junction_id] = vessel_list
+            junction_radii[junction_id] = max([radii[v] for v in vessel_list])
             junction_coords.append(coord)
             junction_id += 1
     
-    return dict(junctions), np.array(junction_coords)
+    return dict(junctions), junction_radii, np.array(junction_coords)
 
 
-def identify_junction_regions(mesh, junction_points, radius_factor=2.0):
+def identify_junction_regions(mesh, junctions, junction_radii, junction_points,radius_factor=2.0):
     """
     Identify mesh regions around junction points for smoothing.
     
@@ -86,12 +121,13 @@ def identify_junction_regions(mesh, junction_points, radius_factor=2.0):
     """
     junction_regions = []
     
-    for junction_point in junction_points:
+    for i, junction_point in enumerate(junction_points):
         # Find points within a certain radius of the junction
         distances = np.linalg.norm(mesh.points - junction_point, axis=1)
         
         # Use the minimum radius of vessels at this junction as base radius
         min_radius = np.min(distances[distances > 0])  # Exclude exact matches
+        min_radius = junction_radii[i]
         smoothing_radius = min_radius * radius_factor
         
         # Get points within smoothing radius
@@ -124,22 +160,27 @@ def smooth_junction_region(region_mesh, iterations=5, relaxation_factor=0.1):
     smoothed_mesh : pv.PolyData
         Smoothed mesh region
     """
+    import pdb; pdb.set_trace()
     if region_mesh.n_points < 4:  # Need at least 4 points for meaningful smoothing
         return region_mesh
     
     # Apply Taubin smoothing with boundary preservation
-    smoothed = region_mesh.smooth_taubin(
-        n_iter=iterations,
-        pass_band=relaxation_factor,
-        boundary_smoothing=True,
-        normalize_coordinates=True
+    # smoothed = region_mesh.smooth_taubin(
+    #     n_iter= iterations,
+    #     pass_band=relaxation_factor,
+    #     boundary_smoothing=True,
+    #     normalize_coordinates=True
+    # )
+
+    smoothed = region_mesh.smooth(n_iter=1000,
+    #feature_smoothing=True
     )
     
     return smoothed
 
 
 def apply_junction_smoothing(mesh, tree_data, vessel_map, connectivity, 
-                           smoothing_radius_factor=2.0, smoothing_iterations=5,
+                           smoothing_radius_factor=2.0, smoothing_iterations=30,
                            relaxation_factor=0.1):
     """
     Apply junction smoothing to a vascular mesh.
@@ -167,7 +208,8 @@ def apply_junction_smoothing(mesh, tree_data, vessel_map, connectivity,
         Mesh with smoothed junctions
     """
     # Detect junctions
-    junctions, junction_points = detect_junctions(tree_data, vessel_map, connectivity)
+    import pdb; pdb.set_trace()
+    junctions, junction_radii, junction_points = detect_junctions(tree_data, vessel_map, connectivity)
     
     if len(junction_points) == 0:
         print("No junctions detected for smoothing.")
@@ -179,7 +221,8 @@ def apply_junction_smoothing(mesh, tree_data, vessel_map, connectivity,
     smoothed_mesh = mesh.copy()
     
     # Identify junction regions
-    junction_regions = identify_junction_regions(mesh, junction_points, smoothing_radius_factor)
+    smoothing_radius_factor = 5
+    junction_regions = identify_junction_regions(mesh, junctions, junction_radii, junction_points, smoothing_radius_factor)
     
     # Apply smoothing to each junction region
     for i, region in enumerate(junction_regions):
@@ -217,7 +260,7 @@ def apply_junction_smoothing(mesh, tree_data, vessel_map, connectivity,
 
 
 def smooth_junctions_advanced(mesh, tree_data, vessel_map, connectivity, 
-                            hsize=None, cap_resolution=40):
+                            hsize=None, cap_resolution=10):
     """
     Advanced junction smoothing that integrates with the existing mesh processing pipeline.
     
@@ -243,7 +286,7 @@ def smooth_junctions_advanced(mesh, tree_data, vessel_map, connectivity,
     """
     try:
         # Detect junctions
-        junctions, junction_points = detect_junctions(tree_data, vessel_map, connectivity)
+        junctions, junction_radii, junction_points = detect_junctions(tree_data, vessel_map, connectivity)
         
         if len(junction_points) == 0:
             print("No junctions detected for smoothing.")
@@ -271,18 +314,30 @@ def smooth_junctions_advanced(mesh, tree_data, vessel_map, connectivity,
     smoothed_walls = []
     for wall in walls:
         # Apply Taubin smoothing with boundary preservation
+        
         smoothed_wall = wall.smooth_taubin(
             n_iter=10,
-            pass_band=0.1,
-            boundary_smoothing=True,
+            pass_band=0.05,
+            #boundary_smoothing=True,
             normalize_coordinates=True
         )
+        
+
+        # smoothed_wall = wall.smooth(n_iter=100,
+        # feature_smoothing=True,
+        # boundary_smoothing=True,
+        # )
         smoothed_walls.append(smoothed_wall)
     
     # Reconstruct the mesh with smoothed walls
+
     if len(smoothed_walls) == 1:
         smoothed_mesh = smoothed_walls[0]
         
+        junction_regions = identify_junction_regions(smoothed_wall, junctions, junction_radii, junction_points, 2)
+        for region in junction_regions:
+            smoothed_walls.append(region.extract_surface().subdivide(1,'linear'))
+        import pdb; pdb.set_trace()
         # Extract boundaries and remesh caps
         boundaries = smoothed_mesh.extract_feature_edges(
             non_manifold_edges=False, 
@@ -330,16 +385,18 @@ def smooth_junctions_advanced(mesh, tree_data, vessel_map, connectivity,
             caps.insert(0, smoothed_mesh)
             smoothed_mesh = pv.merge(caps)
             smoothed_mesh.hsize = hsize
-            return smoothed_mesh
+            import pdb; pdb.set_trace()
+            return smoothed_mesh, junction_regions
         except Exception as e:
             print(f"Warning: Failed to merge smoothed mesh: {e}")
             print("Returning original mesh without smoothing.")
-            return mesh
+            return mesh, junction_regions
     else:
         # For multiple walls, merge them
         smoothed_mesh = pv.merge(smoothed_walls)
         smoothed_mesh.hsize = hsize if hsize is not None else mesh.hsize
-        return smoothed_mesh
+        
+        return smoothed_mesh, None
 
 
 def get_junction_statistics(tree_data, vessel_map, connectivity):
@@ -360,7 +417,7 @@ def get_junction_statistics(tree_data, vessel_map, connectivity):
     stats : Dict
         Dictionary containing junction statistics
     """
-    junctions, junction_points = detect_junctions(tree_data, vessel_map, connectivity)
+    junctions, junction_radii, junction_points = detect_junctions(tree_data, vessel_map, connectivity)
     
     if len(junctions) == 0:
         return {

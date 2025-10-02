@@ -1,7 +1,7 @@
 # Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
 # file LICENSE.rst or https://cmake.org/licensing for details.
 
-cmake_minimum_required(VERSION 4.1.1)
+cmake_minimum_required(VERSION 4.1.0)
 
 # Reject any attempt to use a toolchain file. We must not use one because
 # we could be downloading it here. If the CMAKE_TOOLCHAIN_FILE environment
@@ -27,7 +27,7 @@ set_property(GLOBAL PROPERTY _CMAKE_FindGit_GIT_EXECUTABLE_VERSION
 
 include(ExternalProject)
 ExternalProject_Add(eigen-populate
-                     "UPDATE_DISCONNECTED" "False" "GIT_REPOSITORY" "https://gitlab.com/libeigen/eigen.git" "EXTERNALPROJECT_INTERNAL_ARGUMENT_SEPARATOR" "GIT_TAG" "master" "GIT_SHALLOW" "TRUE" "GIT_PROGRESS" "TRUE"
+                     "UPDATE_DISCONNECTED" "True" "GIT_REPOSITORY" "https://gitlab.com/libeigen/eigen.git" "EXTERNALPROJECT_INTERNAL_ARGUMENT_SEPARATOR" "GIT_TAG" "master" "GIT_SHALLOW" "TRUE" "GIT_PROGRESS" "TRUE" "UPDATE_COMMAND" "" "GIT_CONFIG" "core.autocrlf=false" "core.filemode=false"
                     SOURCE_DIR          "/Users/natalia/Desktop/svVascularize/tmp/solver-0d/_deps/eigen-src"
                     BINARY_DIR          "/Users/natalia/Desktop/svVascularize/tmp/solver-0d/_deps/eigen-build"
                     CONFIGURE_COMMAND   ""

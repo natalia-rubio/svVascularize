@@ -51,7 +51,7 @@ mesh = tree.export_solid(
     watertight=True,
     smooth_junctions=True,
     smoothing_radius_factor=2.0,    # Radius multiplier for smoothing region
-    smoothing_iterations=5          # Number of smoothing iterations
+    smoothing_iterations=30       # Number of smoothing iterations
 )
 ```
 
@@ -209,7 +209,7 @@ Potential future improvements include:
 
 ### Tree Methods
 
-#### `export_solid(smooth_junctions=True, smoothing_radius_factor=2.0, smoothing_iterations=5)`
+#### `export_solid(smooth_junctions=True, smoothing_radius_factor=2.0, smoothing_iterations=30)`
 Export tree as solid mesh with optional junction smoothing.
 
 #### `get_junction_statistics()`
@@ -220,7 +220,7 @@ Get statistics about junctions in the tree.
 #### `detect_junctions(tree_data, vessel_map, connectivity, tolerance=1e-6)`
 Detect vessel junctions from tree structure.
 
-#### `smooth_junctions_advanced(mesh, tree_data, vessel_map, connectivity, hsize=None, cap_resolution=40)`
+#### `smooth_junctions_advanced(mesh, tree_data, vessel_map, connectivity, hsize=None, cap_resolution=10)`
 Apply advanced junction smoothing to mesh.
 
 #### `get_junction_statistics(tree_data, vessel_map, connectivity)`

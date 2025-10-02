@@ -19,7 +19,7 @@ class ForestConnection:
             tree_connections.solve(*args, num_vessels=num_vessels, attempts=attempts)
             self.tree_connections.append(tree_connections)
 
-    def export_solid(self, cap_resolution=40, extrude_roots=False):
+    def export_solid(self, cap_resolution=10, extrude_roots=False):
         network_solids = []
         network_lines = []
         network_tubes = []

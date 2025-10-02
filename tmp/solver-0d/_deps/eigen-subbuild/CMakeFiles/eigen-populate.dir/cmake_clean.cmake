@@ -6,9 +6,9 @@ file(REMOVE_RECURSE
   "eigen-populate-prefix/src/eigen-populate-stamp/eigen-populate-download"
   "eigen-populate-prefix/src/eigen-populate-stamp/eigen-populate-install"
   "eigen-populate-prefix/src/eigen-populate-stamp/eigen-populate-mkdir"
-  "eigen-populate-prefix/src/eigen-populate-stamp/eigen-populate-patch"
+  "eigen-populate-prefix/src/eigen-populate-stamp/eigen-populate-patch_disconnected"
   "eigen-populate-prefix/src/eigen-populate-stamp/eigen-populate-test"
-  "eigen-populate-prefix/src/eigen-populate-stamp/eigen-populate-update"
+  "eigen-populate-prefix/src/eigen-populate-stamp/eigen-populate-update_disconnected"
 )
 
 # Per-language clean rules from dependency scanning.
