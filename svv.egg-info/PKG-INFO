@@ -34,6 +34,8 @@ Requires-Dist: scikit-learn
 Requires-Dist: tqdm
 Requires-Dist: pymeshfix==0.17.0
 Requires-Dist: numexpr
+Requires-Dist: pyvistaqt
+Requires-Dist: pyside6
 Dynamic: author
 Dynamic: author-email
 Dynamic: classifier

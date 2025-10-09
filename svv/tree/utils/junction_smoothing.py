@@ -12,6 +12,7 @@ from typing import List, Dict, Tuple, Optional
 from collections import defaultdict
 import pymeshfix
 from svv.utils.remeshing.remesh import remesh_surface
+from svv.utils.remeshing.remesh import sphere_refinement
 from svv.simulation.utils.extract_faces import extract_faces
 import pyvista as pv
 from pyvista import examples
@@ -79,15 +80,21 @@ def detect_junctions(tree_data, vessel_map, connectivity, tolerance=1e-6):
 
     # Create a mapping from coordinates to vessel indices
     point_to_vessels = defaultdict(list)
+    offset_dict = {}
     
     for i in range(len(tree_data)):
+        
+        offset = 0*radii[i] * (distal_points[i] - proximal_points[i])/np.linalg.norm(distal_points[i] - proximal_points[i])
+        
         # Add proximal point
         prox_coord = tuple(proximal_points[i])
         point_to_vessels[prox_coord].append(i)
         
+        
         # Add distal point
         dist_coord = tuple(distal_points[i])
         point_to_vessels[dist_coord].append(i)
+        offset_dict[dist_coord] = offset
     
     # Find points where multiple vessels meet (junctions)
     junction_id = 0
@@ -95,13 +102,14 @@ def detect_junctions(tree_data, vessel_map, connectivity, tolerance=1e-6):
         if len(vessel_list) > 1:  # Multiple vessels meet at this point
             junctions[junction_id] = vessel_list
             junction_radii[junction_id] = max([radii[v] for v in vessel_list])
-            junction_coords.append(coord)
+            junction_coords.append(coord + offset_dict[dist_coord])
             junction_id += 1
-    
+    if len(junction_coords) == 0:
+        print("No junctions detected.")
     return dict(junctions), junction_radii, np.array(junction_coords)
 
 
-def identify_junction_regions(mesh, junctions, junction_radii, junction_points,radius_factor=2.0):
+def identify_junction_regions(mesh, junctions, junction_radii, junction_points,radius_factor=4.0):
     """
     Identify mesh regions around junction points for smoothing.
     
@@ -160,7 +168,6 @@ def smooth_junction_region(region_mesh, iterations=5, relaxation_factor=0.1):
     smoothed_mesh : pv.PolyData
         Smoothed mesh region
     """
-    import pdb; pdb.set_trace()
     if region_mesh.n_points < 4:  # Need at least 4 points for meaningful smoothing
         return region_mesh
     
@@ -180,7 +187,7 @@ def smooth_junction_region(region_mesh, iterations=5, relaxation_factor=0.1):
 
 
 def apply_junction_smoothing(mesh, tree_data, vessel_map, connectivity, 
-                           smoothing_radius_factor=2.0, smoothing_iterations=30,
+                           smoothing_radius_factor=4.0, smoothing_iterations=30,
                            relaxation_factor=0.1):
     """
     Apply junction smoothing to a vascular mesh.
@@ -208,7 +215,6 @@ def apply_junction_smoothing(mesh, tree_data, vessel_map, connectivity,
         Mesh with smoothed junctions
     """
     # Detect junctions
-    import pdb; pdb.set_trace()
     junctions, junction_radii, junction_points = detect_junctions(tree_data, vessel_map, connectivity)
     
     if len(junction_points) == 0:
@@ -221,7 +227,7 @@ def apply_junction_smoothing(mesh, tree_data, vessel_map, connectivity,
     smoothed_mesh = mesh.copy()
     
     # Identify junction regions
-    smoothing_radius_factor = 5
+    smoothing_radius_factor = 10
     junction_regions = identify_junction_regions(mesh, junctions, junction_radii, junction_points, smoothing_radius_factor)
     
     # Apply smoothing to each junction region
@@ -315,88 +321,52 @@ def smooth_junctions_advanced(mesh, tree_data, vessel_map, connectivity,
     for wall in walls:
         # Apply Taubin smoothing with boundary preservation
         
-        smoothed_wall = wall.smooth_taubin(
-            n_iter=10,
-            pass_band=0.05,
-            #boundary_smoothing=True,
-            normalize_coordinates=True
-        )
-        
-
-        # smoothed_wall = wall.smooth(n_iter=100,
-        # feature_smoothing=True,
-        # boundary_smoothing=True,
-        # )
+        smoothed_wall = wall.smooth_taubin(n_iter=10,pass_band=0.05,normalize_coordinates=True )
         smoothed_walls.append(smoothed_wall)
     
     # Reconstruct the mesh with smoothed walls
-
+    radius_factor = 4
+    junction_regions = identify_junction_regions(smoothed_wall, junctions, junction_radii, junction_points, radius_factor)
     if len(smoothed_walls) == 1:
         smoothed_mesh = smoothed_walls[0]
         
-        junction_regions = identify_junction_regions(smoothed_wall, junctions, junction_radii, junction_points, 2)
+        
         for region in junction_regions:
             smoothed_walls.append(region.extract_surface().subdivide(1,'linear'))
-        import pdb; pdb.set_trace()
-        # Extract boundaries and remesh caps
-        boundaries = smoothed_mesh.extract_feature_edges(
-            non_manifold_edges=False, 
-            feature_edges=False,
-            manifold_edges=False, 
-            boundary_edges=True
-        )
-        boundaries = boundaries.split_bodies()
         
-        # Remesh caps
-        caps = []
-        for i, boundary in enumerate(boundaries):
-            if hsize is None:
-                hsize = mesh.hsize if hasattr(mesh, 'hsize') else 0.1
-            
-            try:
-                # Convert to PolyData if needed for remeshing
-                if hasattr(boundary, 'faces'):
-                    # Already PolyData
-                    boundary_polydata = boundary
-                else:
-                    # Convert UnstructuredGrid to PolyData
-                    boundary_polydata = boundary.extract_surface()
-                
-                # Check if the boundary has enough points for remeshing
-                if boundary_polydata.n_points < 3:
-                    print(f"Warning: Boundary {i} has too few points ({boundary_polydata.n_points}), skipping remeshing")
-                    caps.append(boundary_polydata)
-                    continue
-                
-                cap = remesh_surface(boundary_polydata, nosurf=True, hsiz=hsize)
-                caps.append(cap)
-                
-            except Exception as e:
-                print(f"Warning: Failed to remesh boundary {i}: {e}")
-                print(f"Using original boundary without remeshing")
-                # Use the original boundary if remeshing fails
-                if hasattr(boundary, 'faces'):
-                    caps.append(boundary)
-                else:
-                    caps.append(boundary.extract_surface())
-        
-        # Merge smoothed walls and caps
         try:
             caps.insert(0, smoothed_mesh)
             smoothed_mesh = pv.merge(caps)
             smoothed_mesh.hsize = hsize
-            import pdb; pdb.set_trace()
-            return smoothed_mesh, junction_regions
+            
+            center_list = []; radius_list = []; local_edge_size_list = []
+            for region in junction_regions:
+                center = region.points.mean(axis=0).tolist()
+                radius = np.linalg.norm(region.points - center, axis=1).max()
+                local_edge_size = radius/(5 * radius_factor)
+                #smoothed_mesh = smoothed_mesh.merge(region.extract_surface().subdivide(1,'linear'), merge_points=True, main_has_priority=True)
+                center_list.append(center); radius_list.append(radius); local_edge_size_list.append(local_edge_size)
+                hsize = min(hsize, local_edge_size) if hsize is not None else local_edge_size
+            print("Sphere refinement: ", radius_list, center_list, local_edge_size_list)
+            smoothed_mesh = sphere_refinement(mesh = smoothed_mesh, radius_list = radius_list, center_list = center_list, local_edge_size_list = local_edge_size_list, global_edge_size = 0.1)
+            
+            fixer = pymeshfix.MeshFix(smoothed_mesh)
+            fixer.repair(verbose=True, joincomp=False, remove_smallest_components=False)
+            smoothed_mesh = fixer.mesh.extract_surface().triangulate().clean()
+            smoothed_mesh.hsize = hsize if hsize is not None else mesh.hsize
+            
+            return smoothed_mesh
+        
         except Exception as e:
             print(f"Warning: Failed to merge smoothed mesh: {e}")
             print("Returning original mesh without smoothing.")
-            return mesh, junction_regions
+            return mesh
     else:
         # For multiple walls, merge them
         smoothed_mesh = pv.merge(smoothed_walls)
         smoothed_mesh.hsize = hsize if hsize is not None else mesh.hsize
         
-        return smoothed_mesh, None
+        return smoothed_mesh
 
 
 def get_junction_statistics(tree_data, vessel_map, connectivity):
@@ -439,3 +409,51 @@ def get_junction_statistics(tree_data, vessel_map, connectivity):
     }
     
     return stats
+
+
+
+        # # Extract boundaries and remesh caps
+        # boundaries = smoothed_mesh.extract_feature_edges(
+        #     non_manifold_edges=False, 
+        #     feature_edges=False,
+        #     manifold_edges=False, 
+        #     boundary_edges=True
+        # )
+        # boundaries = boundaries.split_bodies()
+        
+        # Remesh caps
+        #caps = []
+        # for i, boundary in enumerate(boundaries):
+        #     if hsize is None:
+        #         hsize = mesh.hsize if hasattr(mesh, 'hsize') else 0.1
+            
+        #     try:
+        #         # Convert to PolyData if needed for remeshing
+        #         if hasattr(boundary, 'faces'):
+        #             # Already PolyData
+        #             boundary_polydata = boundary
+        #         else:
+        #             # Convert UnstructuredGrid to PolyData
+        #             boundary_polydata = boundary.extract_surface()
+                
+        #         # Check if the boundary has enough points for remeshing
+        #         if boundary_polydata.n_points < 3:
+        #             print(f"Warning: Boundary {i} has too few points ({boundary_polydata.n_points}), skipping remeshing")
+        #             caps.append(boundary_polydata)
+        #             continue
+                
+        #         #cap = remesh_surface(boundary_polydata, nosurf=True, hsiz=hsize)
+        #         import pdb; pdb.set_trace()
+        #         cap = remesh_surface(boundary_polydata)
+        #         caps.append(cap)
+                
+        #     except Exception as e:
+        #         print(f"Warning: Failed to remesh boundary {i}: {e}")
+        #         print(f"Using original boundary without remeshing")
+        #         # Use the original boundary if remeshing fails
+        #         if hasattr(boundary, 'faces'):
+        #             caps.append(boundary)
+        #         else:
+        #             caps.append(boundary.extract_surface())
+        
+        # Merge smoothed walls and caps

@@ -25,8 +25,7 @@ from svv.simulation.fluid.rom import one_d
 from svv.simulation.fluid.rom import zero_d
 from svv.simulation.fluid.rom.zero_d.zerod_forest import export_0d_simulation
 from svv.simulation.fluid.rom.zero_d import project_solution
-#from svv.tree.utils.refinement_helpers import *
-from svv.tree.utils.refine_tetgen_regions import *
+
 
 class Simulation(object):
     def __init__(self, synthetic_object, name=None, directory=None):
@@ -94,11 +93,9 @@ class Simulation(object):
                             extension_scale += 1.0
                     root_extension = self.synthetic_object.data[0, 21] * extension_scale
                     self.synthetic_object.data[0, 0:3] -= root_extension * self.synthetic_object.data.get('w_basis', 0)
-                fluid_surface_mesh, junction_regions = self.synthetic_object.export_solid(watertight=True)
+                fluid_surface_mesh = self.synthetic_object.export_solid(watertight=True)
                 tet_fluid = tetgen.TetGen(fluid_surface_mesh)
-                if not isinstance(refinement_regions, type(None)) and len(refinement_regions) > 0:
-                    for region in refinement_regions:
-                        tet_fluid.add_region(point=region['point'], attribute=1, maxvol=region['max_volume'])
+
                 try:
                     
                     #tet_fluid.tetrahedralize(minratio=minratio, mindihedral=10.0, steinerleft=-1, order=order, nobisect=True, verbose=2, switches='M')
@@ -126,13 +123,12 @@ class Simulation(object):
 
 
                 else:
-                    import pdb; pdb.set_trace()
-                    refined_volume_mesh, nodes, elements = refine_tetgen_mesh_in_regions(basepath, junction_regions, refine_factor=0.5)
+                    
                     nodes, elem = tet_fluid.tetrahedralize(switches='pq{}/{}MVYSJ'.format(minratio, mindihedral))
                     hsize = fluid_surface_mesh.hsize
                     fluid_surface_mesh = fluid_volume_mesh.extract_surface()
                     fluid_surface_faces = extract_faces(fluid_surface_mesh, fluid_volume_mesh)
-                    import pdb; pdb.set_trace()
+                    
                     if boundary_layer:
                         #fluid_surface_mesh = fluid_volume_mesh.extract_surface()
                         #fluid_surface_faces = extract_faces(fluid_surface_mesh, fluid_volume_mesh)

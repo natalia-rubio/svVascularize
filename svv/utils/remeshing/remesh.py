@@ -799,7 +799,7 @@ def write_medit_sol(mesh: pv.PolyData, path: str, array_name="MeshSizingFunction
         vals = np.full(npts, float(default_size), dtype=float)
 
     vals = scale * vals  # SV typically scales by ~0.8 before MMG
-
+    print(f"Writing .sol file '{path}' with array '{array_name}' (scale={scale})")
     with open(path, "w") as f:
         f.write("MeshVersionFormatted 2\n")
         f.write("Dimension 3\n\n")
@@ -809,12 +809,13 @@ def write_medit_sol(mesh: pv.PolyData, path: str, array_name="MeshSizingFunction
         for v in vals:
             f.write(f"{v:.15g}\n")
         f.write("\nEnd\n")
+    print(f"Wrote {npts} values.")
 
 def sphere_refinement(
       mesh: pv.PolyData,
-      radius: float,
-      center: Sequence[float],
-      local_edge_size: float,
+      radius_list: float,
+      center_list: Sequence[float],
+      local_edge_size_list: float,
       global_edge_size: float,
       array_name: str = "MeshSizingFunction",
       refine_id_name: Optional[str] = None,
@@ -909,9 +910,9 @@ def sphere_refinement(
     """
     if not isinstance(mesh, pv.PolyData):
         raise TypeError("mesh must be a pyvista.PolyData")
-    if radius <= 0:
+    if np.any(np.asarray(radius_list) <= 0):
         raise ValueError("radius must be > 0")
-    if local_edge_size <= 0:
+    if np.any(np.asarray(local_edge_size_list) <= 0):
         raise ValueError("local_edge_size must be > 0")
     if global_edge_size <= 0:
         raise ValueError("global_edge_size must be > 0")
@@ -919,13 +920,7 @@ def sphere_refinement(
     out = mesh if inplace else mesh.copy(deep=True)
 
     pts = out.points.astype(float)
-    ctr = np.asarray(center, dtype=float).reshape(3)
-    if ctr.shape != (3,):
-        raise ValueError("center must be a sequence of three floats")
 
-    # Compute mask of points inside the sphere (vectorized).
-    d2 = np.einsum("ij,ij->i", pts - ctr, pts - ctr)  # squared distance
-    mask = d2 <= float(radius) ** 2
 
     # Prepare or fetch the sizing array.
     n = pts.shape[0]
@@ -940,10 +935,20 @@ def sphere_refinement(
             sizes = np.full(n, float(global_edge_size), dtype=float)
 
     # Apply refinement.
-    sizes[mask] = float(local_edge_size)
+    for radius, center, local_edge_size in zip(radius_list, center_list, local_edge_size_list):
+        ctr = np.asarray(center, dtype=float).reshape(3)
+        if ctr.shape != (3,):
+            raise ValueError("center must be a sequence of three floats")
+
+        # Compute mask of points inside the sphere (vectorized).
+        d2 = np.einsum("ij,ij->i", pts - ctr, pts - ctr)  # squared distance
+        mask = d2 <= float(radius) ** 2
+        sizes[mask] = float(local_edge_size)
+    
     out.point_data[array_name] = sizes
 
     # Optional: tag refined points (like SimVascular's RefineID).
+    
     if refine_id_name:
         if refine_id_name in out.point_data:
             rid = np.asarray(out.point_data[refine_id_name], dtype=np.int32).copy()
@@ -953,7 +958,9 @@ def sphere_refinement(
             rid = np.zeros(n, dtype=np.int32)
         rid[mask] = int(refine_id_value)
         out.point_data[refine_id_name] = rid
+        
     write_medit_sol(out, "in.sol", array_name = "MeshSizingFunction",scale = 1, default_size = global_edge_size)
+    
     pv.save_meshio("tmp.mesh", out)
     if not isinstance(required_triangles, type(None)):
         add_required("tmp.mesh", required_triangles)
@@ -975,7 +982,8 @@ def sphere_refinement(
     else:
         raise NotImplementedError("Operating system not supported.")
     devnull = open(os.devnull, 'w')
-    executable_list = [_EXE_, "tmp.mesh", "-sol", "in.sol"]
+    # executable_list = [_EXE_, "tmp.mesh", "-sol", "in.sol"]
+    executable_list = [_EXE_, "tmp.mesh", "-sol", "in.sol", "-out", "tmp.o.mesh"]
     if ar is not None:
         executable_list.extend(["-ar", str(ar)])
     if hausd is not None:
@@ -1004,6 +1012,7 @@ def sphere_refinement(
         executable_list.extend(["-optim"])
     if rn is not None:
         executable_list.extend(["-rn", str(rn)])
+    print(executable_list)
     if verbosity == 0:
         try:
             subprocess.check_call(executable_list, stdout=devnull, stderr=devnull)
@@ -1016,7 +1025,8 @@ def sphere_refinement(
         except:
             os.chmod(_EXE_, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
             subprocess.check_call(executable_list)
-    clean_medit("tmp.o.mesh")
+
+    
     remesh_data = meshio.read("tmp.o.mesh")
     vertices = remesh_data.points
     has_triangles = False
@@ -1033,4 +1043,5 @@ def sphere_refinement(
     os.remove("tmp.o.sol")
     os.remove("tmp.o.mesh")
     os.remove("in.sol")
+    print("Sphere refinement completed.")
     return remeshed_surface

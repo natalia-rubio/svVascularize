@@ -422,7 +422,7 @@ def build_watertight_solid(tree, cap_resolution=10, smooth_junctions=True,
         print(f"Junction statistics: {junction_stats}")
         
         # Apply smoothing
-        model, junction_regions = smooth_junctions_advanced(
+        model = smooth_junctions_advanced(
             model, 
             tree.data, 
             tree.vessel_map, 
@@ -445,7 +445,7 @@ def build_watertight_solid(tree, cap_resolution=10, smooth_junctions=True,
         hsize = model.hsize
         model = fix.mesh.compute_normals(auto_orient_normals=True)
         model.hsize = hsize
-    return model, junction_regions
+    return model
 
 
 def build_merged_solid(tree):

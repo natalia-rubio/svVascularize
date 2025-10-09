@@ -23,6 +23,7 @@ svv/domain/core/h_matrix.py
 svv/domain/core/m_matrix.py
 svv/domain/core/n_matrix.py
 svv/domain/io/__init__.py
+svv/domain/io/dmn.py
 svv/domain/io/read.py
 svv/domain/kernel/__init__.py
 svv/domain/kernel/coordinate_system.py
@@ -147,6 +148,13 @@ svv/utils/spatial/c_distance.pyx
 svv/visualize/__init__.py
 svv/visualize/forest/__init__.py
 svv/visualize/forest/show.py
+svv/visualize/gui/__init__.py
+svv/visualize/gui/__main__.py
+svv/visualize/gui/example_usage.py
+svv/visualize/gui/main_window.py
+svv/visualize/gui/parameter_panel.py
+svv/visualize/gui/point_selector.py
+svv/visualize/gui/vtk_widget.py
 svv/visualize/tree/__init__.py
 svv/visualize/tree/points.py
 svv/visualize/tree/show.py

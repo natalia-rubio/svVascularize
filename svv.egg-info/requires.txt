@@ -12,3 +12,5 @@ scikit-learn
 tqdm
 pymeshfix==0.17.0
 numexpr
+pyvistaqt
+pyside6
