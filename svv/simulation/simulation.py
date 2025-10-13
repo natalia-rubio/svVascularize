@@ -628,13 +628,22 @@ class Simulation(object):
                 if not os.path.exists(self.file_path + os.sep + "mesh" + os.sep + fluid_mesh.name + os.sep + "mesh-surfaces"):
                     os.mkdir(self.file_path + os.sep + "mesh" + os.sep + fluid_mesh.name + os.sep + "mesh-surfaces")
             if isinstance(fluid_mesh.mesh, pyvista.UnstructuredGrid):
+                
+                fluid_mesh.mesh.point_data["GlobalNodeID"] = numpy.arange(fluid_mesh.mesh.n_points, dtype=numpy.int32)
+                fluid_mesh.mesh.cell_data['GlobalElementID'] = numpy.arange(fluid_mesh.mesh.n_cells, dtype=numpy.int32)
                 fluid_mesh.mesh.save(self.file_path + os.sep + "mesh" + os.sep + fluid_mesh.name + os.sep + "{}.vtu".format(fluid_mesh.name))
+                
             elif isinstance(fluid_mesh.mesh, pyvista.PolyData):
                 fluid_mesh.mesh.save(self.file_path + os.sep + "mesh" + os.sep + fluid_mesh.name + os.sep + "{}.vtp".format(fluid_mesh.name))
             else:
                 raise ValueError("Mesh must be a pyvista mesh object.")
             for name, face in fluid_mesh.faces.items():
                 if isinstance(face, pyvista.PolyData):
+                    # import pdb; pdb.set_trace()
+                    for array_name, array in face.cell_data.items():
+                        face.cell_data[array_name] = array.astype(numpy.int32)
+                    # face.mesh.point_data["GlobalNodeID"] = numpy.arange(fluid_mesh.mesh.n_points, dtype=numpy.int32)
+                    # fluid_mesh.mesh.cell_data['GlobalElementID'] = numpy.arange(fluid_mesh.mesh.n_cells, dtype=numpy.int32)
                     face.save(self.file_path + os.sep + "mesh" + os.sep + fluid_mesh.name + os.sep + "mesh-surfaces" + os.sep + "{}.vtp".format(name))
                 else:
                     raise ValueError("Face must be a pyvista mesh object.")
