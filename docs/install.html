@@ -120,6 +120,39 @@ pip install svv</code></pre>
             <code>svv</code> and other python packages you might already use
             or need later.
         </div>
+
+      <h3>Choose pure‑Python or accelerated</h3>
+      <p>svVascularize runs entirely in pure Python, but ships optional C/Cython
+         accelerators for heavier routines. You can select either experience at
+         install time:</p>
+      <ul>
+        <li><strong>Pure‑Python (default):</strong>
+          <pre data-copy><code class="language-shell">pip install svv</code></pre>
+          <em>No compiler required.</em> All performance‑critical paths have
+          Python fallbacks.</li>
+        <li><strong>Accelerated (prebuilt extensions):</strong>
+          <pre data-copy><code class="language-shell">pip install "svv[accel]"</code></pre>
+          The <code>[accel]</code> extra pulls in a small companion wheel,
+          <code>svv-accelerated</code>, which contains compiled accelerators.
+          When present, <code>svv</code> automatically prefers those modules.
+        </li>
+      </ul>
+
+      <div class="callout info">
+        <strong>Advanced (optional):</strong> To force a local from‑source build
+        of extensions instead of using the companion wheel, set the env var
+        and ask pip to build from source:
+        <pre data-copy><code class="language-shell">SVV_BUILD_EXTENSIONS=1 pip install --no-binary svv "svv[accel]"</code></pre>
+        This requires a C++17 tool‑chain, CMake, Cython, and NumPy headers.
+      </div>
+
+      <h3>Verify which backend is active</h3>
+      <pre data-copy><code class="language-python">import importlib
+m = importlib.import_module('svv.tree.utils.c_local_optimize')
+print(getattr(m, '__file__', '&lt;builtin&gt;'))
+</code></pre>
+      <p>If you see a <code>.so</code>/<code>.pyd</code> path, the accelerated backend
+         is active. A <code>.py</code> path indicates the pure‑Python fallback.</p>
     </section>
 
     <!-- CONDA -->

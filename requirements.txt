@@ -6,7 +6,6 @@ usearch
 scikit-image
 tetgen
 trimesh[all]
-hnswlib
 pyvista~=0.44.2
 scikit-learn
 tqdm

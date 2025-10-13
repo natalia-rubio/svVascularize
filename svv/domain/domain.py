@@ -10,7 +10,7 @@ from svv.domain.routines.c_sample import pick_from_tetrahedron, pick_from_triang
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from svv.domain.routines.boolean import boolean
 # from svtoolkit.tree.utils.KDTreeManager import KDTreeManager
-from svv.tree.utils.TreeManager import KDTreeManager, HNSWTree, USearchTree
+from svv.tree.utils.TreeManager import KDTreeManager, USearchTree
 from time import perf_counter
 from tqdm import trange, tqdm
 from sklearn.neighbors import BallTree

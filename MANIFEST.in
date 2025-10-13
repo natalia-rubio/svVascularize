@@ -19,3 +19,6 @@ recursive-include svv/bin *
 include svv/utils/remeshing/Windows/mmg2d_O3.exe
 include svv/utils/remeshing/Windows/mmg3d_O3.exe
 include svv/utils/remeshing/Windows/mmgs_O3.exe
+ 
+# Exclude any compiled extension artifacts from source distribution
+global-exclude *.so *.pyd *.dylib *.dll

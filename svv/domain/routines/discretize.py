@@ -1,8 +1,25 @@
 import numpy as np
-import vtk
 import pyvista as pv
-from vtk.util import numpy_support
 from skimage.measure import marching_cubes
+
+# Import only the required VTK classes from vtkmodules to avoid
+# pulling in optional IO backends (e.g., NetCDF) via umbrella import.
+from vtkmodules.vtkFiltersSources import vtkPlaneSource
+from vtkmodules.vtkCommonTransforms import vtkTransform
+from vtkmodules.vtkFiltersCore import (
+    vtkAppendFilter,
+    vtkThreshold,
+    vtkMarchingSquares,
+)
+from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
+from vtkmodules.vtkFiltersGeneral import vtkTransformFilter, vtkTransformPolyDataFilter
+from vtkmodules.vtkCommonDataModel import (
+    vtkUnstructuredGrid,
+    vtkDataObject,
+    vtkUniformGrid,
+    vtkImageData,
+)
+from vtkmodules.util import numpy_support
 
 def descritize(domain, **kwargs):
     """
@@ -85,16 +102,16 @@ def threshold_2d(function, resolution, origin, scale, upper, lower):
 
     """
     # Build a plane source to evaluate the function
-    plane = vtk.vtkPlaneSource()
+    plane = vtkPlaneSource()
     plane.SetXResolution(resolution)
     plane.SetYResolution(resolution)
     plane.Update()
     # Define the transform to scale the plane
-    transform = vtk.vtkTransform()
+    transform = vtkTransform()
     transform.Scale(scale[0], scale[1], 1)
     transform.Translate(origin[0], origin[1], origin[2])
     # Apply the transform to the plane
-    transform_filter = vtk.vtkTransformPolyDataFilter()
+    transform_filter = vtkTransformPolyDataFilter()
     transform_filter.SetInputData(plane.GetOutput())
     transform_filter.SetTransform(transform)
     transform_filter.Update()
@@ -107,19 +124,19 @@ def threshold_2d(function, resolution, origin, scale, upper, lower):
     # Set implicit values to the plane
     plane.GetPointData().SetScalars(values)
     # Create an UnstructuredGrid from the PolyData
-    polydata_to_unstructured_grid = vtk.vtkAppendFilter()
+    polydata_to_unstructured_grid = vtkAppendFilter()
     polydata_to_unstructured_grid.AddInputData(plane)
     polydata_to_unstructured_grid.Update()
-    unstructured_grid = vtk.vtkUnstructuredGrid()
+    unstructured_grid = vtkUnstructuredGrid()
     unstructured_grid.ShallowCopy(polydata_to_unstructured_grid.GetOutput())
     # Threshold the plane
-    threshold = vtk.vtkThreshold()
+    threshold = vtkThreshold()
     threshold.SetInputData(unstructured_grid)
     threshold.ThresholdBetween(lower, upper)
-    threshold.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "ImplicitFunctionValue")
+    threshold.SetInputArrayToProcess(0, 0, 0, vtkDataObject.FIELD_ASSOCIATION_POINTS, "ImplicitFunctionValue")
     threshold.Update()
     # Obtain the mesh
-    geometry_filter = vtk.vtkGeometryFilter()
+    geometry_filter = vtkGeometryFilter()
     geometry_filter.SetInputData(threshold.GetOutput())
     geometry_filter.Update()
     mesh = geometry_filter.GetOutput()
@@ -163,14 +180,14 @@ def threshold_3d(function, resolution, origin, scale, upper, lower):
 
     """
     # Build the structured grid for thresholding
-    uniform_grid = vtk.vtkUniformGrid()
+    uniform_grid = vtkUniformGrid()
     uniform_grid.SetDimensions(resolution, resolution, resolution)
     # Define the transform to scale the grid
-    transform = vtk.vtkTransform()
+    transform = vtkTransform()
     transform.Scale(scale[0], scale[1], scale[2])
     transform.Translate(origin[0], origin[1], origin[2])
     # Apply the transform to the grid
-    transform_filter = vtk.vtkTransformFilter()
+    transform_filter = vtkTransformFilter()
     transform_filter.SetInputData(uniform_grid)
     transform_filter.SetTransform(transform)
     transform_filter.Update()
@@ -183,16 +200,16 @@ def threshold_3d(function, resolution, origin, scale, upper, lower):
     # Set implicit values to the grid
     uniform_grid.GetPointData().SetScalars(values)
     # Transform the grid to an unstructured grid
-    append_filter = vtk.vtkAppendFilter()
+    append_filter = vtkAppendFilter()
     append_filter.AddInputData(uniform_grid)
     append_filter.Update()
-    unstructured_grid = vtk.vtkUnstructuredGrid()
+    unstructured_grid = vtkUnstructuredGrid()
     unstructured_grid.ShallowCopy(append_filter.GetOutput())
     # Threshold the grid
-    threshold = vtk.vtkThreshold()
+    threshold = vtkThreshold()
     threshold.SetInputData(unstructured_grid)
     threshold.ThresholdBetween(lower, upper)
-    threshold.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "ImplicitFunctionValue")
+    threshold.SetInputArrayToProcess(0, 0, 0, vtkDataObject.FIELD_ASSOCIATION_POINTS, "ImplicitFunctionValue")
     threshold.Update()
     # Obtain the mesh
     mesh = threshold.GetOutput()
@@ -225,15 +242,15 @@ def marching_squares(function, grid, origin, value=0.0):
     dimension_1 = grid[1].flatten()
     dimensions = np.vstack((dimension_0, dimension_1)).T
     values = function(dimensions).flatten()
-    image_data = vtk.vtkImageData()
+    image_data = vtkImageData()
     image_data.SetDimensions(grid[0].shape[0], grid[0].shape[1], 1)
     image_data.SetSpacing(dimension_0_spacing, dimension_1_spacing, 1)
     image_data.SetOrigin(origin[0], origin[1], 0)
-    image_data.AllocateScalars(vtk.VTK_DOUBLE, 1)
-    vtk_values = numpy_support.numpy_to_vtk(values, deep=True, array_type=vtk.VTK_DOUBLE)
+    # Let numpy_support infer array type to avoid referencing VTK_* constants
+    vtk_values = numpy_support.numpy_to_vtk(values, deep=True)
     image_data.GetPointData().SetScalars(vtk_values)
     # Create the 2D filter
-    marching_squares_filter = vtk.vtkMarchingSquares()
+    marching_squares_filter = vtkMarchingSquares()
     marching_squares_filter.SetInputData(image_data)
     marching_squares_filter.SetValue(0, value)
     # Obtain the mesh
@@ -299,5 +316,3 @@ def contour(function, points, resolution, value=0.0, buffer=1.5):
         boundary = None
         mesh = None
     return boundary, mesh
-
-

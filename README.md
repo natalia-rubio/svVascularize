@@ -18,4 +18,4 @@ biomanufacturing applications or computational fluid dynamic (CFD) analysis.
 
 * **Website:** https://simvascular.github.io/svVascularize/
 * **PyPi:** https://pypi.org/project/svv/
-* **Source code:** https://github.com/zasexton/svVascularize
+* **Source code:** https://github.com/SimVascular/svVascularize

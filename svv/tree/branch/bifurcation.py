@@ -8,7 +8,12 @@ import pyvista as pv
 from time import perf_counter
 import itertools
 from svv.tree.data.data import TreeData, TreeMap
-from svv.tree.utils.c_local_optimize import tree_cost, create_new_vessels, update_vessels, tree_cost_2
+try:
+    from svv.tree.utils.c_local_optimize import tree_cost, create_new_vessels, update_vessels, tree_cost_2
+    _LOCAL_OPT_AVAILABLE = True
+except Exception:
+    tree_cost = create_new_vessels = update_vessels = None  # type: ignore
+    _LOCAL_OPT_AVAILABLE = False
 from svv.tree.utils.c_close import close, close_exact_points, close_exact_point, sphere_proximity
 from svv.tree.utils.c_basis import basis, basis_inplace
 from svv.tree.utils.c_obb import obb_any
@@ -29,6 +34,11 @@ ne.set_num_threads(16)
 
 #@profile
 def add_vessel(tree, **kwargs):
+    if not _LOCAL_OPT_AVAILABLE:
+        raise ImportError(
+            "Local optimization requires accelerators. Install with 'pip install svv[accel]' "
+            "or build with SVV_BUILD_EXTENSIONS=1."
+        )
     """
     Create a potential vessel for the current tree configuration.
 

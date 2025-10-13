@@ -145,6 +145,12 @@ class VascularizeGUI(QMainWindow):
             try:
                 from svv.domain.domain import Domain
                 domain = Domain.load(file_path)
+
+                # If boundary wasn't saved in the .dmn file, rebuild it
+                if domain.boundary is None and hasattr(domain, 'patches') and len(domain.patches) > 0:
+                    self.status_bar.showMessage("Building domain boundary...")
+                    domain.build()
+
                 self.load_domain(domain)
             except Exception as e:
                 QMessageBox.critical(

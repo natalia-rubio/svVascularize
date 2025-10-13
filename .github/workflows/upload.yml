@@ -13,39 +13,57 @@ on:
           - "false"
 
 jobs:
-  build_wheels:
-    # We'll build on a matrix of OSes and Python versions.
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macOS-latest, ubuntu-latest, windows-latest]
-    env:
-      CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-*"
-      CIBW_ENVIRONMENT: "PIP_NO_CACHE_DIR=1"
-      CIBW_BUILD_VERBOSITY: 3
-
+  build_base_wheel:
+    # Build the pure-Python wheel once (no platform matrix needed)
+    runs-on: ubuntu-latest
     steps:
       - name: Check out code
         uses: actions/checkout@v4
 
       - name: Install build dependencies
         run: |
-          pip install --upgrade pip && pip install cibuildwheel twine
+          pip install --upgrade pip && pip install build
 
-      - name: Upgrade pip, setuptools, wheel
-        run: python -m pip install --upgrade setuptools wheel
+      - name: Build base wheel (pure-Python svv)
+        run: python -m build --wheel --outdir dist
 
-      - name: Build wheels
+      - name: Upload base wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-wheel
+          path: dist/*.whl
+
+  build_wheels_accelerated:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macOS-latest, ubuntu-latest, windows-latest]
+    env:
+      CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-*"
+      CIBW_BUILD_VERBOSITY: 3
+      # Install build deps before building each wheel (use python -m pip for Windows compatibility)
+      CIBW_BEFORE_BUILD: "python -m pip install -U pip setuptools wheel cython numpy cmake"
+      # Tell setup.py to build the companion 'svv-accelerated' distribution
+      CIBW_ENVIRONMENT: "PIP_NO_CACHE_DIR=1 SVV_ACCEL_COMPANION=1"
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install cibuildwheel
+        run: pip install --upgrade pip && pip install cibuildwheel
+
+      - name: Build wheels (svv-accelerated)
         run: cibuildwheel --output-dir dist
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cibw-wheels-${{ matrix.os }}
+          name: cibw-wheels-accelerated-${{ matrix.os }}
           path: dist
 
   build_sdist:
-    needs: [build_wheels]
+    needs: [build_base_wheel]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,13 +81,15 @@ jobs:
           path: dist/*.tar.gz
 
   upload_pypi:
-    needs: [build_wheels, build_sdist]
+    needs: [build_base_wheel, build_wheels_accelerated, build_sdist]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          # unpacks all CIBW artifacts into dist/
-          pattern: cibw-*
+          # download all artifacts from previous jobs (base wheels, sdist, accelerated wheels)
+          pattern: '*'
           path: dist
           merge-multiple: true
 
@@ -77,8 +97,66 @@ jobs:
         run: |
           pip install --upgrade pip && pip install twine
 
-      - name: Upload to PyPI
-        run: twine upload --repository pypi dist/*
+      - name: Upload base package (svv) to PyPI
+        run: |
+          set -euo pipefail
+          files=$(ls dist/svv-*.whl dist/svv-*.tar.gz 2>/dev/null | grep -v 'svv-accelerated' || true)
+          if [ -z "$files" ]; then
+            echo "No base svv artifacts found; skipping upload."
+            exit 0
+          fi
+          if [ -z "${{ secrets.PYPI_PASSWORD_SVV }}" ]; then
+            echo "::error title=Missing secret::The repository secret 'PYPI_PASSWORD_SVV' is not configured. Set it to a PyPI API token with access to the 'svv' project.";
+            exit 1
+          fi
+          twine upload --non-interactive --skip-existing --verbose --repository pypi $files
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD_SVV }}
+
+      - name: Upload accelerated wheels (svv-accelerated) to PyPI
+        run: |
+          set -euo pipefail
+          files=$(ls dist/svv-accelerated-*.whl 2>/dev/null || true)
+          if [ -z "$files" ]; then
+            echo "No svv-accelerated artifacts found; skipping upload."
+            exit 0
+          fi
+          if [ -z "${{ secrets.PYPI_PASSWORD_ACCEL }}" ]; then
+            echo "::error title=Missing secret::The repository secret 'PYPI_PASSWORD_ACCEL' is not configured. Set it to a PyPI API token with access to the 'svv-accelerated' project.";
+            exit 1
+          fi
+          twine upload --non-interactive --skip-existing --verbose --repository pypi $files
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD_ACCEL }}
+
+      - name: Extract version from artifacts
+        id: extract_version
+        run: |
+          set -euo pipefail
+          file=$(ls dist/svv-*-py3-none-any.whl 2>/dev/null || true)
+          if [ -z "$file" ]; then
+            file=$(ls dist/svv-*.tar.gz 2>/dev/null | head -n1 || true)
+          fi
+          if [ -z "$file" ]; then
+            echo "::error title=Version detection failed::No base svv artifact found to determine version."; exit 1
+          fi
+          base=$(basename "$file")
+          # Extract version after 'svv-' up to next '-'
+          version=$(echo "$base" | sed -E 's/^svv-([^\-]+).*/\1/')
+          echo "Detected version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release and upload artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.extract_version.outputs.version }}
+          name: svv ${{ steps.extract_version.outputs.version }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: |
+            dist/svv-*.whl
+            dist/svv-*.tar.gz
+            dist/svv-accelerated-*.whl

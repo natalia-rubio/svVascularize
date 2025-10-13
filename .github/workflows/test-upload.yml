@@ -13,39 +13,28 @@ on:
           - "false"
 
 jobs:
-  build_wheels:
-    # We'll build on a matrix of OSes and Python versions.
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macOS-latest, ubuntu-latest, windows-latest]
-    env:
-      CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-*"
-      CIBW_ENVIRONMENT: "PIP_NO_CACHE_DIR=1"
-      CIBW_BUILD_VERBOSITY: 3
-
+  build_base_wheel:
+    # Build the pure-Python wheel once (no platform matrix needed)
+    runs-on: ubuntu-latest
     steps:
       - name: Check out code
         uses: actions/checkout@v4
 
       - name: Install build dependencies
         run: |
-          pip install --upgrade pip && pip install cibuildwheel twine
+          pip install --upgrade pip && pip install build
 
-      - name: Upgrade pip, setuptools, wheel
-        run: python -m pip install --upgrade setuptools wheel
+      - name: Build base wheel (pure-Python svv)
+        run: python -m build --wheel --outdir dist
 
-      - name: Build wheels
-        run: cibuildwheel --output-dir dist
-
-      - name: Upload artifacts
+      - name: Upload base wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cibw-wheels-${{ matrix.os }}
-          path: dist
+          name: base-wheel
+          path: dist/*.whl
 
   build_sdist:
-    needs: [build_wheels]
+    needs: [build_base_wheel]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,23 +51,70 @@ jobs:
           name: cibw-sdist
           path: dist/*.tar.gz
           
-  upload_testpypi:
-    needs: [build_wheels, build_sdist]
+
+  build_wheels_accelerated:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macOS-latest, ubuntu-latest, windows-latest]
+    env:
+      CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-*"
+      CIBW_BUILD_VERBOSITY: 3
+      # Install build deps before building each wheel (use python -m pip for Windows compatibility)
+      CIBW_BEFORE_BUILD: "python -m pip install -U pip setuptools wheel cython numpy cmake"
+      # Tell setup.py to build the companion 'svv-accelerated' distribution
+      CIBW_ENVIRONMENT: "PIP_NO_CACHE_DIR=1 SVV_ACCEL_COMPANION=1"
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install cibuildwheel
+        run: pip install --upgrade pip && pip install cibuildwheel
+
+      - name: Build wheels (svv-accelerated)
+        run: cibuildwheel --output-dir dist
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-accelerated-${{ matrix.os }}
+          path: dist
+
+  upload_testpypi_all:
+    needs: [build_base_wheel, build_wheels_accelerated, build_sdist]
     runs-on: ubuntu-latest
-    steps:    
+    steps:
       - uses: actions/download-artifact@v4
         with:
-          # unpacks all CIBW artifacts into dist/
-          pattern: cibw-*
+          # download all artifacts from previous jobs (base wheel, sdist, accelerated wheels)
+          pattern: '*'
           path: dist
           merge-multiple: true
-
-      - name: Install build dependencies
+      - name: Install twine
+        run: pip install --upgrade pip && pip install twine
+      - name: Validate TestPyPI token (svv)
+        if: ${{ hashFiles('dist/svv-*-py3-none-any.whl') != '' || hashFiles('dist/svv-*.tar.gz') != '' }}
         run: |
-          pip install --upgrade pip && pip install twine
-          
-      - name: Upload to TestPyPI
-        run: twine upload --repository testpypi dist/*
+          if [ -z "${{ secrets.TEST_PYPI_PASSWORD_SVV }}" ]; then
+            echo "::error title=Missing secret::The repository secret 'TEST_PYPI_PASSWORD_SVV' is not configured. Set it to a TestPyPI API token with access to the 'svv' project.";
+            exit 1;
+          fi
+      - name: Upload base package (svv) to TestPyPI
+        if: ${{ hashFiles('dist/svv-*-py3-none-any.whl') != '' || hashFiles('dist/svv-*.tar.gz') != '' }}
+        run: twine upload --non-interactive --skip-existing --verbose --repository testpypi dist/svv-*-py3-none-any.whl dist/svv-*.tar.gz
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_PASSWORD }}
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_PASSWORD_SVV }}
+      - name: Validate TestPyPI token (svv-accelerated)
+        if: ${{ hashFiles('dist/svv-accelerated-*.whl') != '' }}
+        run: |
+          if [ -z "${{ secrets.TEST_PYPI_PASSWORD_ACCEL }}" ]; then
+            echo "::error title=Missing secret::The repository secret 'TEST_PYPI_PASSWORD_ACCEL' is not configured. Set it to a TestPyPI API token with access to the 'svv-accelerated' project.";
+            exit 1;
+          fi
+      - name: Upload accelerated wheels (svv-accelerated) to TestPyPI
+        if: ${{ hashFiles('dist/svv-accelerated-*.whl') != '' }}
+        run: twine upload --non-interactive --skip-existing --verbose --repository testpypi dist/svv-accelerated-*.whl
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_PASSWORD_ACCEL }}

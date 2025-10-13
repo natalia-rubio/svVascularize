@@ -275,7 +275,7 @@ class Tree(object):
 
     def export_solid(self, outdir=None, shell_thickness=0.0, watertight=False, 
                     smooth_junctions=True, smoothing_radius_factor=2.0, 
-                    smoothing_iterations=30, **kwargs):
+                    smoothing_iterations=5, **kwargs):
         """
         Export the tree as a solid mesh with optional junction smoothing.
         

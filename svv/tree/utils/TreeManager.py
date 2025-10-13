@@ -4,12 +4,9 @@ from scipy.spatial import cKDTree
 import numpy as np
 from time import perf_counter
 from threading import Lock, Condition
-import hnswlib
 import os
 from usearch.index import Index, MetricKind
 MAX_THREADS = min(4, max(1, os.cpu_count() - 1))
-# TODO: Consider using the hnswlib library for approximate nearest neighbor for large datasets (n >= 1e5)
-# TODO: Consider Usearch library for approximate nearest neighbor
 
 class USearchTree:
     def __init__(self, data, space='l2sq', ef_construction=200, M=100, ef=20):
@@ -105,91 +102,6 @@ class USearchTree:
         """
         self.index.remove(ids)
         self.index.add(ids, data)
-
-class HNSWTree:
-    def __init__(self, data, space='l2', ef_construction=200, M=16, num_elements=int(4e6), ef=20):
-        """
-        Initialize HNSW tree with the given data.
-
-        Parameters:
-        - data: A 2D numpy array of shape (N, D), where N is the number of points, and D is the dimensionality.
-        - space: Metric to use for distance calculation. Options: 'l2' (Euclidean), 'ip' (inner product).
-        - ef_construction: The size of the dynamic candidate list during construction.
-        - M: Controls the number of bi-directional links created for every new element during construction.
-        """
-        self.num_elements = num_elements
-        _, self.dim = data.shape
-        self.index = hnswlib.Index(space=space, dim=self.dim)
-        self.index.init_index(max_elements=self.num_elements, ef_construction=ef_construction, M=M,
-                              allow_replace_deleted=True)
-        threads = os.cpu_count() // 2 - 1
-        self.index.set_num_threads(threads)
-        labels = np.arange(data.shape[0])
-        self.index.add_items(data, labels)
-
-        # Control the trade-off between accuracy and speed at query time
-        self.index.set_ef(ef)
-
-    def query(self, points, k=1):
-        """
-        Query the nearest neighbors for the given points.
-
-        Parameters:
-        - points: A 2D numpy array of shape (N, D) where N is the number of query points.
-        - k: The number of nearest neighbors to return.
-
-        Returns:
-        - distances: A 2D array of distances to the nearest neighbors.
-        - indices: A 2D array of indices of the nearest neighbors.
-        """
-        indices, distances = self.index.knn_query(points, k=k)
-        return distances, indices
-
-    def query_ball_point(self, points, r, **kwargs):
-        """
-        Query points within distance `r` from the given points.
-
-        Parameters:
-        - points: A 2D numpy array of shape (N, D) where N is the number of query points.
-        - r: The radius to search within.
-
-        Returns:
-        - A list of lists, where each sublist contains the indices of points within distance `r` of the corresponding query point.
-        """
-        # Approximate a ball query by performing knn search with a large `k` and filtering by `r`
-        k = kwargs.get("k", min(50, self.index.element_count))  # A large `k` value to ensure enough neighbors are found
-        indices, distances = self.index.knn_query(points, k=k)
-
-        # Filter based on radius `r`
-        result = []
-        for i in range(len(points)):
-            within_r = indices[i][distances[i] <= r].tolist()  # Filter neighbors by radius
-            result.append(within_r)
-
-        return result
-
-    def set_ef(self, ef):
-        """
-        Set the `ef` parameter, which controls the search depth and the trade-off between speed and accuracy.
-
-        Parameters:
-        - ef: The size of the dynamic list for nearest neighbors search.
-        """
-        self.index.set_ef(ef)
-
-    def add_items(self, data, ids):
-        """
-        Add more points to the HNSW index.
-
-        Parameters:
-        - data: A 2D numpy array of new points to add.
-        """
-        self.index.add_items(data, ids, num_threads=1)
-        self.num_elements += data.shape[0]
-
-    def replace(self, data, ids):
-        [self.index.mark_deleted(i) for i in ids]
-        self.index.add_items(data, ids, num_threads=1, replace_deleted=True)
 
 class ReadWriteLock:
     def __init__(self):

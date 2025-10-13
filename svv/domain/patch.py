@@ -83,6 +83,14 @@ class Patch:
         b = np.array(self.constants[n:n * (d_dim + 1)].reshape(n, d_dim))
         c = np.array(self.constants[n * (d_dim + 1):n * (d_dim + 1) + d_dim])
         d = np.array(self.constants[-1])
+
+        # If kernel doesn't exist (e.g., loaded from .dmn), create a minimal one for dimension info
+        if self.kernel is None:
+            if self.normals is not None:
+                self.kernel = Kernel(self.points, lam=self.lam)
+            else:
+                self.kernel = Kernel(self.points, lam=self.lam)
+
         a = a.reshape(a.shape + (1,) * self.kernel.d)
         b = b.reshape(tuple([b.shape[0]]) + (1,) * self.kernel.d + tuple([b.shape[1]]))
         c = c.reshape((1,) * self.kernel.d + c.shape)

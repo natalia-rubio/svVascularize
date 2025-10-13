@@ -1,6 +1,16 @@
 from setuptools import setup, find_packages, Extension
-from Cython.Build import cythonize
-import numpy
+try:
+    from Cython.Build import cythonize  # Optional: only needed when building extensions
+    HAS_CYTHON = True
+except Exception:
+    cythonize = None
+    HAS_CYTHON = False
+try:
+    import numpy as _np  # Optional: only needed when building extensions
+    HAS_NUMPY = True
+except Exception:
+    _np = None
+    HAS_NUMPY = False
 import sys
 import os
 import platform
@@ -31,6 +41,8 @@ def env_flag(name: str, default: bool = False) -> bool:
     if val is None:
         return default
     return str(val).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+ACCEL_COMPANION = env_flag("SVV_ACCEL_COMPANION", False)
 
 def get_filename_without_ext(abs_path):
     base_name = os.path.basename(abs_path)      # e.g. "file.txt"
@@ -413,7 +425,10 @@ class DownloadAndBuildExt(build_ext):
 
     def finalize_options(self):
         super().finalize_options()
-        self.inplace = True
+        # Don't build extensions in-place for the companion binary wheel,
+        # since its package subdirectories (svv_accel/...) do not exist in
+        # the source tree. Use the default build/lib placement instead.
+        self.inplace = (not ACCEL_COMPANION)
 
 def get_extra_compile_args():
     extra_args = []
@@ -448,34 +463,44 @@ def get_extra_compile_args():
         update_link_args = ['-fopenmp']
     return extra_args, update_compile_args, update_link_args
 
-#extra_compile_args, update_compile_args, update_link_args = get_extra_compile_args()
-# extra_compile_args=update_compile_args, extra_link_args=update_link_args),
-extensions = [
-    Extension('svv.domain.routines.c_allocate', ['svv/domain/routines/c_allocate.pyx'],
-              include_dirs=[numpy.get_include()], language='c++'),
-    Extension('svv.domain.routines.c_sample', ['svv/domain/routines/c_sample.pyx'],
-              include_dirs=[numpy.get_include()], language='c++'),
-    Extension('svv.utils.spatial.c_distance', ['svv/utils/spatial/c_distance.pyx'],
-              include_dirs=[numpy.get_include()], language='c++'),
-    Extension('svv.tree.utils.c_angle', ['svv/tree/utils/c_angle.pyx'],
-              include_dirs=[numpy.get_include()], language='c++'),
-    Extension('svv.tree.utils.c_basis', ['svv/tree/utils/c_basis.pyx'],
-              include_dirs=[numpy.get_include()], language='c++'),
-    Extension('svv.tree.utils.c_close', ['svv/tree/utils/c_close.pyx'],
-              include_dirs=[numpy.get_include()], language='c++'),
-    Extension('svv.tree.utils.c_local_optimize', ['svv/tree/utils/c_local_optimize.pyx'],
-              include_dirs=[numpy.get_include()], language='c++'),
-    Extension('svv.tree.utils.c_obb', ['svv/tree/utils/c_obb.pyx'],
-              include_dirs=[numpy.get_include()], language='c++'),
-    Extension('svv.tree.utils.c_update', ['svv/tree/utils/c_update.pyx'],
-              include_dirs=[numpy.get_include()], language='c++'),
-    Extension('svv.tree.utils.c_extend', ['svv/tree/utils/c_extend.pyx'],
-              include_dirs=[numpy.get_include()], language='c++'),
-    Extension('svv.simulation.utils.close_segments', ['svv/simulation/utils/close_segments.pyx'],
-              include_dirs=[numpy.get_include()], language='c++'),
-    Extension('svv.simulation.utils.extract', ['svv/simulation/utils/extract.pyx'],
-              include_dirs=[numpy.get_include()], language='c++'),
-]
+def _build_extensions():
+    """Return list of Extension objects if we are building with accelerators, else []."""
+    # Two modes:
+    #  - Normal package (svv): build only when explicitly requested via env flag
+    #  - Companion package (svv-accelerated): always build extensions (wheels-only)
+    build_accel = env_flag("SVV_BUILD_EXTENSIONS", False) or env_flag("SVV_WITH_CYTHON", False) or ACCEL_COMPANION
+    if not (build_accel and HAS_CYTHON and HAS_NUMPY):
+        return []
+    include_dirs = [_np.get_include()] if HAS_NUMPY else []
+    prefix = 'svv_accel.' if ACCEL_COMPANION else 'svv.'
+    def mod(name):
+        return prefix + name
+    return [
+        Extension(mod('domain.routines.c_allocate'), ['svv/domain/routines/c_allocate.pyx'],
+                  include_dirs=include_dirs, language='c++'),
+        Extension(mod('domain.routines.c_sample'), ['svv/domain/routines/c_sample.pyx'],
+                  include_dirs=include_dirs, language='c++'),
+        Extension(mod('utils.spatial.c_distance'), ['svv/utils/spatial/c_distance.pyx'],
+                  include_dirs=include_dirs, language='c++'),
+        Extension(mod('tree.utils.c_angle'), ['svv/tree/utils/c_angle.pyx'],
+                  include_dirs=include_dirs, language='c++'),
+        Extension(mod('tree.utils.c_basis'), ['svv/tree/utils/c_basis.pyx'],
+                  include_dirs=include_dirs, language='c++'),
+        Extension(mod('tree.utils.c_close'), ['svv/tree/utils/c_close.pyx'],
+                  include_dirs=include_dirs, language='c++'),
+        Extension(mod('tree.utils.c_local_optimize'), ['svv/tree/utils/c_local_optimize.pyx'],
+                  include_dirs=include_dirs, language='c++'),
+        Extension(mod('tree.utils.c_obb'), ['svv/tree/utils/c_obb.pyx'],
+                  include_dirs=include_dirs, language='c++'),
+        Extension(mod('tree.utils.c_update'), ['svv/tree/utils/c_update.pyx'],
+                  include_dirs=include_dirs, language='c++'),
+        Extension(mod('tree.utils.c_extend'), ['svv/tree/utils/c_extend.pyx'],
+                  include_dirs=include_dirs, language='c++'),
+        Extension(mod('simulation.utils.close_segments'), ['svv/simulation/utils/close_segments.pyx'],
+                  include_dirs=include_dirs, language='c++'),
+        Extension(mod('simulation.utils.extract'), ['svv/simulation/utils/extract.pyx'],
+                  include_dirs=include_dirs, language='c++'),
+    ]
 
 def read_version():
     init_path = Path(__file__).parent / "svv" / "__init__.py"
@@ -503,7 +528,10 @@ CLASSIFIERS = ['Intended Audience :: Science/Research',
                'Operating System :: Unix',
                'Operating System :: MacOS']
 
-PACKAGES = find_packages(include=['svv', 'svv.*'])
+if ACCEL_COMPANION:
+    PACKAGES = find_packages(include=['svv_accel']) or ['svv_accel']
+else:
+    PACKAGES = find_packages(include=['svv', 'svv.*'])
 
 
 def parse_requirements(path="requirements.txt"):
@@ -520,6 +548,10 @@ def parse_requirements(path="requirements.txt"):
 
 
 REQUIREMENTS = parse_requirements()
+_build_accel_flag = env_flag("SVV_BUILD_EXTENSIONS", False) or env_flag("SVV_WITH_CYTHON", False)
+if not _build_accel_flag and not ACCEL_COMPANION:
+    # For the main package, filter out Cython unless explicitly requested
+    REQUIREMENTS = [r for r in REQUIREMENTS if not r.strip().lower().startswith('cython')]
 
 
 KEYWORDS = ["modeling",
@@ -528,8 +560,10 @@ KEYWORDS = ["modeling",
             "3d-printing",
             "fluid-dynamics"]
 
+extensions = _build_extensions()
+
 setup_info = dict(
-    name='svv',
+    name=('svv-accelerated' if ACCEL_COMPANION else 'svv'),
     version=VERSION,
     author='Zachary Sexton',
     author_email='zsexton@stanford.edu',
@@ -541,12 +575,19 @@ setup_info = dict(
     description="svVascularize (svv): A synthetic vascular generation, modeling, and simulation package",
     long_description=DESCRIPTION,
     long_description_content_type="text/markdown",
-    ext_modules=cythonize(extensions),
-    package_data={'svv.bin': ['*']},
-    include_dirs=[numpy.get_include()],
+    ext_modules=cythonize(extensions) if (extensions and HAS_CYTHON) else [],
+    package_data=( {'svv.bin': ['*']} if not ACCEL_COMPANION else {} ),
+    exclude_package_data=(
+        {"svv": ["*.so", "*.pyd", "*.dylib", "*.dll"]} if not ACCEL_COMPANION else {}
+    ),
     include_package_data=True,
     zip_safe=False,
     install_requires=REQUIREMENTS,
+    extras_require=(
+        # For the main package, make [accel] and [accelerated] pull in the companion wheel
+        {'accel': [f'svv-accelerated=={VERSION}'], 'accelerated': [f'svv-accelerated=={VERSION}']}
+        if not ACCEL_COMPANION else {}
+    ),
     cmdclass={
         'build_ext': DownloadAndBuildExt,
         'bdist_wheel': BDistWheelCmd,
