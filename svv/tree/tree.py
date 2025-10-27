@@ -13,7 +13,7 @@ from svv.visualize.tree.show import show
 from svv.tree.branch.bifurcation import add_vessel, check_tree
 from svv.tree.export.export_solid import build_watertight_solid, build_merged_solid
 from svv.tree.export.export_centerlines import build_centerlines
-from svv.tree.utils.TreeManager import KDTreeManager, HNSWTree, USearchTree
+from svv.tree.utils.TreeManager import KDTreeManager, USearchTree #HNSWTree,
 from svv.tree.utils.c_extend import build_c_vessel_map
 from collections import ChainMap
 
@@ -275,7 +275,7 @@ class Tree(object):
 
     def export_solid(self, outdir=None, shell_thickness=0.0, watertight=False, 
                     smooth_junctions=True, smoothing_radius_factor=2.0, 
-                    smoothing_iterations=5, **kwargs):
+                    smoothing_iterations=5, hsize=None, **kwargs):
         """
         Export the tree as a solid mesh with optional junction smoothing.
         
@@ -293,6 +293,8 @@ class Tree(object):
             Factor to determine smoothing radius around junctions
         smoothing_iterations : int
             Number of smoothing iterations
+        hsize : float, optional
+            Mesh element size. If None, automatically calculated from vessel radii
         **kwargs
             Additional keyword arguments
             
@@ -310,11 +312,11 @@ class Tree(object):
             if os.path.exists(outdir):
                 raise ValueError("Output directory already exists.")
         if not watertight:
-            model = build_merged_solid(self)
+            model = build_merged_solid(self, hsize=hsize)
         else:
             model = build_watertight_solid(self, smooth_junctions=smooth_junctions,
                                          smoothing_radius_factor=smoothing_radius_factor,
-                                         smoothing_iterations=smoothing_iterations)
+                                         smoothing_iterations=smoothing_iterations, hsize=hsize)
         return model
 
 

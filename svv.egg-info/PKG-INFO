@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: svv
-Version: 0.0.32
+Version: 0.0.33
 Summary: svVascularize (svv): A synthetic vascular generation, modeling, and simulation package
 Author: Zachary Sexton
 Author-email: zsexton@stanford.edu
@@ -23,12 +23,10 @@ Description-Content-Type: text/markdown
 Requires-Dist: numpy~=1.24.0
 Requires-Dist: scipy~=1.10.1
 Requires-Dist: matplotlib~=3.7.5
-Requires-Dist: Cython~=3.0.7
 Requires-Dist: usearch
 Requires-Dist: scikit-image
 Requires-Dist: tetgen
 Requires-Dist: trimesh[all]
-Requires-Dist: hnswlib
 Requires-Dist: pyvista~=0.44.2
 Requires-Dist: scikit-learn
 Requires-Dist: tqdm
@@ -36,6 +34,10 @@ Requires-Dist: pymeshfix==0.17.0
 Requires-Dist: numexpr
 Requires-Dist: pyvistaqt
 Requires-Dist: pyside6
+Provides-Extra: accel
+Requires-Dist: svv-accelerated==0.0.33; extra == "accel"
+Provides-Extra: accelerated
+Requires-Dist: svv-accelerated==0.0.33; extra == "accelerated"
 Dynamic: author
 Dynamic: author-email
 Dynamic: classifier
@@ -43,6 +45,7 @@ Dynamic: description
 Dynamic: description-content-type
 Dynamic: keywords
 Dynamic: license
+Dynamic: provides-extra
 Dynamic: requires-dist
 Dynamic: requires-python
 Dynamic: summary
@@ -67,4 +70,4 @@ biomanufacturing applications or computational fluid dynamic (CFD) analysis.
 
 * **Website:** https://simvascular.github.io/svVascularize/
 * **PyPi:** https://pypi.org/project/svv/
-* **Source code:** https://github.com/zasexton/svVascularize
+* **Source code:** https://github.com/SimVascular/svVascularize

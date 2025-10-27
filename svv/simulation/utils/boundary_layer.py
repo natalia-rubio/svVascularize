@@ -7,12 +7,13 @@ from itertools import permutations
 from scipy.spatial import cKDTree
 from scipy.sparse.csgraph import min_weight_full_bipartite_matching
 from svv.utils.remeshing.remesh import remesh_surface_2d, remesh_volume
+import pymeshfix
 import tetgen
 import vtk
 
 
 class BoundaryLayer(object):
-    def __init__(self, surface, layer_thickness=1.0, layer_thickness_ratio=0.5,
+    def __init__(self, surface, caps, layer_thickness=1.0, layer_thickness_ratio=0.5,
                  constant_thickness=True, max_layer_thickness=None, min_layer_thickness=None,
                  number_of_sublayers=3, number_of_substeps=100, sublayer_ratio=0.3,
                  relaxation=0.01, local_correction_factor=0.45, include_surface_cells=True,
@@ -21,6 +22,8 @@ class BoundaryLayer(object):
                  use_warp_vector_magnitude_as_thickness=False, layer_thickness_array=None,
                  warp_vector_array="Normals", remesh_vol=False, combine=True):
         self.surface = surface
+        self.caps = caps
+        #import pdb; pdb.set_trace()
         self.warp_vector_array = warp_vector_array
         self.surface_cells = {}
         self.surface_cell_array = self.surface.faces.reshape(-1, 4)[:, 1:]
@@ -76,7 +79,9 @@ class BoundaryLayer(object):
         self.combine = combine
 
     def generate(self):
+        verbose = True
         grid = deepcopy(self.surface)
+        #import pdb; pdb.set_trace()
         boundary_layer_cell_array = []
         boundary_layer_celltype_array = []
         cell_entity_ids_array = []
@@ -121,6 +126,7 @@ class BoundaryLayer(object):
         tangled_cell_ids = self.check_tangle(grid)
         maximum_iterations = int(self.number_of_substeps / 10)
         iteration = 0
+        maximum_iterations = 2
         while len(tangled_cell_ids) > 0 and iteration < maximum_iterations:
             self.increment_warp_vectors(grid, intermediate_number_of_steps, relaxation)
             tangled_cell_ids = self.check_tangle(grid)
@@ -132,6 +138,7 @@ class BoundaryLayer(object):
                 self.increment_warp_vectors(grid, final_number_of_steps, relaxation)
                 tangled_cell_ids = self.check_tangle(grid)
         input_points = np.array(grid.points, dtype=np.float64)
+        print("Checked for tangles ", iteration, " times.")
         for i in tqdm.trange(self.number_of_sublayers, desc="Generating Boundary Layers", leave=False):
             warp_points = self.init_warp_points(input_points, i, False)
             if np.any(np.linalg.norm(warp_points - input_points, axis=1) == 0.0):
@@ -190,6 +197,7 @@ class BoundaryLayer(object):
                         boundary_layer_cell_array.append(surfacePts)
                         cell_entity_ids_array.append(self.outer_surface_cell_entity_id)
                         output_surface_cellids_array.append(j)
+            print("Layer ", i + 1, " of ", self.number_of_sublayers, " complete.")
         all_cell_array = []
         for cell in boundary_layer_cell_array:
             all_cell_array.extend(cell)
@@ -197,12 +205,15 @@ class BoundaryLayer(object):
         layers = pv.UnstructuredGrid(boundary_layer_cell_array, boundary_layer_celltype_array, output_points)
         layers.cell_data['EntityID'] = np.array(cell_entity_ids_array)
         layers = self.tetra_filter(layers)
+        print("Tetrahedralized boundary layer mesh.")
         self.layers = layers
         if self.combine:
             combined, interior = self.build_combined(layers, tolerance=self.tolerance)
+            print("Combined boundary layer mesh with input surface.")
         else:
             combined = None
             interior = None
+            
         return combined, interior, layers
 
     def build_warp_vectors(self, grid):
@@ -527,7 +538,9 @@ class BoundaryLayer(object):
             cell_id = outer_surface_cells[i]
             cell = layers.get_cell(cell_id)
             outer_surface_pt_ids.extend(cell.point_ids)
+        print("Sorted inner and outer surface points.")
         outer = layers.extract_cells(outer_surface_cells)
+        #import pdb; pdb.set_trace()
         layers_tree = cKDTree(layers.points)
         dists, inds = layers_tree.query(outer.points, k=2)
         if np.any(dists[:, 1] == 0.0):
@@ -540,24 +553,50 @@ class BoundaryLayer(object):
                                                  non_manifold_edges=False)
         boundaries = boundaries.split_bodies()
         caps = []
-        for i in range(len(boundaries)):
-            cap = remesh_surface_2d(boundaries[i])
+        
+        for i, boundary in enumerate(boundaries):
+            bounds = boundary.bounds
+            xmin, xmax, ymin, ymax, zmin, zmax = bounds
+
+            # Calculate the dimensions along each axis
+            dx = xmax - xmin
+            dy = ymax - ymin
+            dz = zmax - zmin
+
+            # Calculate the maximum distance (diagonal of the bounding box)
+            max_distance = np.sqrt(dx**2 + dy**2 + dz**2)
+            
+            cap = remesh_surface_2d(boundaries[i], hmax = max_distance / 5, hmin=max_distance / 100,)
+            #cap = boundaries[i]
             #_, outer_cap_inds = outer_tree.query(cap.points)
             #cap.points[:boundaries[i].n_points, :] = outer.points[outer_cap_inds[:boundaries[i].n_points], :]
             caps.append(cap)
+        #import pdb; pdb.set_trace()
         caps.insert(0, outer)
+        
+        print("Constructing outer surface...")
         outer_total = pv.merge(caps, merge_points=True, progress_bar=True)
         outer_total = outer_total.clean(tolerance=tolerance, progress_bar=True)
+        
+        fixer = pymeshfix.MeshFix(outer_total)
+        fixer.repair(verbose=True, )
+        outer_total = fixer.mesh.extract_surface().triangulate().clean()
+        
         if not outer_total.is_manifold:
+            print("Outer Surface is not manifold.")
+            #import pdb; pdb.set_trace()
             raise ValueError("Merged Outer Surface is not manifold.")
         else:
             print("Merged Outer Surface is manifold.")
+        #pdb.set_trace()
         outer_total_quality = outer_total.compute_cell_quality().cell_data["CellQuality"]
         if np.any(outer_total_quality < 0.0):
             warnings.warn("Outer Surface has inverted triangles.")
         interior = tetgen.TetGen(outer_total)
+        print("Created tetgen object.")
         interior.tetrahedralize(switches='pq1.1/10MVYSJ')
         mesh_interior = interior.grid
+        print("Interior Volume Mesh: {} points, {} cells".format(mesh_interior.n_points, mesh_interior.n_cells))
         if self.remesh_vol:
             print("Remeshing interior volume...")
             mesh_interior = remesh_volume(mesh_interior, nosurf=True)

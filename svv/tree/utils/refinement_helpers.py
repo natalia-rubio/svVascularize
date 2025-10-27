@@ -161,7 +161,7 @@ def refine_tetgen_mesh_in_regions(
     if coarse_patch is not None and coarse_patch.n_cells > 0:
         coarse_patch  =  coarse_patch.extract_surface().triangulate().clean()
         
-    import pdb; pdb.set_trace()
+
     # Merge back together
     if refined_patch is not None and coarse_patch is not None:
         #refined_surface = coarse_patch.merge(refined_patch, merge_points = True, main_has_priority = False)

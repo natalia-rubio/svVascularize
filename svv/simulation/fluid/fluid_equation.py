@@ -39,7 +39,7 @@ class FluidEquation(Equation):
         else:
             time_varying = True
         self.add_bc(face, bc_type, value, time_varying=time_varying,
-                    profile=profile, impose_flux=impose_flux)
+                    time_varying_file=time_varying_file, profile=profile, impose_flux=impose_flux)
 
     def add_outlet(self, face, value=None, bc_type='Neumann', time_varying_file=None,
                    impose_flux=False):

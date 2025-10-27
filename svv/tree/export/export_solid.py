@@ -3,7 +3,7 @@ import pyvista
 import pymeshfix
 from tqdm import trange
 from scipy.interpolate import splprep, splev
-from svv.utils.remeshing.remesh import remesh_surface
+from svv.utils.remeshing.remesh import remesh_surface, sphere_refinement
 from svv.domain.routines.boolean import boolean
 from svv.tree.utils.junction_smoothing import smooth_junctions_advanced, get_junction_statistics
 
@@ -320,14 +320,21 @@ def generate_tube(polyline, hsize=None):
     tube = fix.mesh
     tube = tube.compute_normals(auto_orient_normals=True)
     if isinstance(hsize, type(None)):
-        hsize = (min(polyline['radius'])*2*numpy.pi)/25
-    tube = remesh_surface(tube, hsiz=hsize)
+        hsize = min(polyline['radius']) * 0.5
+    else:
+        # Use the provided hsize parameter
+        hsize = min(polyline['radius']) * 0.5
+        print(f"Using provided hsize: {hsize}")
+    # Force mesh size using hmin and hmax parameters
+    tube = remesh_surface(tube, hmin=hsize, hmax=hsize*2, noinsert = False, nomove = False, nosurf = False, hausd = 0.1, hgrad = -1.0,verbosity = 3)
     tube = tube.compute_normals(auto_orient_normals=True)
     fix = pymeshfix.MeshFix(tube)
     fix.repair()
     tube = fix.mesh
     tube = tube.compute_normals(auto_orient_normals=True)
+
     return tube
+    # tube.plot(show_edges=True)
 
 
 def generate_tubes(polylines, hsize=None):
@@ -372,21 +379,21 @@ def union_tubes(tubes, lines, cap_resolution=10):
     model = boolean(tubes[0], tubes[1], operation='union')
     model = model.compute_normals(auto_orient_normals=True)
     hsize = (min(min(lines[0]['radius']), min(lines[1]['radius']))*2*numpy.pi)/cap_resolution
-    model = remesh_surface(model, hsiz=hsize)
+    model = remesh_surface(model, hmin=hsize, hmax=hsize*1.5)
     model = model.compute_normals(auto_orient_normals=True)
     if len(tubes) > 2:
         for i in range(2, len(tubes)):
             model = boolean(model, tubes[i], operation='union')
             model = model.compute_normals(auto_orient_normals=True)
             hsize = min(hsize, (min(lines[i]['radius'])*2*numpy.pi)/cap_resolution)
-            model = remesh_surface(model, hsiz=hsize)
+            model = remesh_surface(model, hmin=hsize, hmax=hsize*1.5)
             model = model.compute_normals(auto_orient_normals=True)
     model.hsize = hsize
     return model
 
 
 def build_watertight_solid(tree, cap_resolution=10, smooth_junctions=True, 
-                          smoothing_radius_factor=2.0, smoothing_iterations=30):
+                          smoothing_radius_factor=2.0, smoothing_iterations=30, hsize=None):
     """
     This function builds a solid surface mesh from a given vascular tree object.
     This mesh should be guaranteed to be watertight and define a closed manifold.
@@ -403,6 +410,8 @@ def build_watertight_solid(tree, cap_resolution=10, smooth_junctions=True,
         Factor to determine smoothing radius around junctions
     smoothing_iterations : int
         Number of smoothing iterations
+    hsize : float, optional
+        Mesh element size. If None, automatically calculated from vessel radii
 
     Returns
     -------
@@ -411,7 +420,7 @@ def build_watertight_solid(tree, cap_resolution=10, smooth_junctions=True,
     """
     xyz, r, _, _, branches, _ = get_interpolated_sv_data(tree.data)
     lines = generate_polylines(xyz, r)
-    tubes = generate_tubes(lines)
+    tubes = generate_tubes(lines, hsize=hsize)
     model = union_tubes(tubes, lines, cap_resolution=cap_resolution)
     
     # Apply junction smoothing if requested

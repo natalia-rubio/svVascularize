@@ -7,7 +7,8 @@ class LinearSolverBase:
         self.absolute_tolerance = 1.0e-10
         self.tolerance = 0.5
         self.max_iterations = 1000
-        self.preconditioner = None
+        self.linear_algebra_type = "fsils"  # Options: fsils, petsc, trilinos
+        self.preconditioner = "fsils"  # Default preconditioner
         self.ns_cg_max_iterations = 1000
         self.ns_cg_tolerance = 1.0e-2
         self.ns_gm_max_iterations = 1000
@@ -22,9 +23,9 @@ class LinearSolverBase:
         return str(vars(self))
 
     def __eq__(self, other):
-        check = ["solver_type", "absolute_tolerance", "tolerance", "max_iterations", "preconditioner",
-                 "ns_cg_max_iterations", "ns_cg_tolerance", "ns_gm_max_iterations", "ns_gm_tolerance",
-                 "use_trilinos_for_assembly"]
+        check = ["solver_type", "absolute_tolerance", "tolerance", "max_iterations", "linear_algebra_type",
+                 "preconditioner", "ns_cg_max_iterations", "ns_cg_tolerance", "ns_gm_max_iterations", 
+                 "ns_gm_tolerance", "use_trilinos_for_assembly"]
         attributes = vars(self)
         other_attributes = vars(other)
         return all(other_attributes[key] == attributes[key] for key in check)
@@ -60,6 +61,18 @@ class LinearSolver(LinearSolverBase):
         else:
             raise ValueError("Solver type must be set.")
 
+        # Create Linear_algebra section (REQUIRED by svMultiPhysics)
+        if not isinstance(self.linear_algebra_type, type(None)):
+            linear_algebra = self.file.createElement("Linear_algebra")
+            linear_algebra.setAttribute("type", self.linear_algebra_type)
+            
+            if not isinstance(self.preconditioner, type(None)):
+                preconditioner = self.file.createElement("Preconditioner")
+                preconditioner.appendChild(self.file.createTextNode(self.preconditioner))
+                linear_algebra.appendChild(preconditioner)
+            
+            ls.appendChild(linear_algebra)
+
         if not isinstance(self.absolute_tolerance, type(None)):
             absolute_tolerance = self.file.createElement("Absolute_tolerance")
             absolute_tolerance.appendChild(self.file.createTextNode(str(self.absolute_tolerance)))
@@ -74,11 +87,6 @@ class LinearSolver(LinearSolverBase):
             max_iterations = self.file.createElement("Max_iterations")
             max_iterations.appendChild(self.file.createTextNode(str(self.max_iterations)))
             ls.appendChild(max_iterations)
-
-        if not isinstance(self.preconditioner, type(None)):
-            preconditioner = self.file.createElement("Preconditioner")
-            preconditioner.appendChild(self.file.createTextNode(self.preconditioner))
-            ls.appendChild(preconditioner)
 
         if not isinstance(self.ns_cg_max_iterations, type(None)):
             ns_cg_max_iterations = self.file.createElement("NS_CG_max_iterations")

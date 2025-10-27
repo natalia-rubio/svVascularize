@@ -4,7 +4,7 @@ import pymeshfix
 from scipy.interpolate import splprep, splev
 from svv.domain.routines.boolean import boolean
 from svv.simulation.utils.extract_faces import extract_faces
-from svv.utils.remeshing.remesh import remesh_surface_2d, remesh_surface
+from svv.utils.ing.remesh import remesh_surface_2d, remesh_surface
 
 
 def smooth_junctions(mesh):

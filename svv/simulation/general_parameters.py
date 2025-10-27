@@ -4,7 +4,7 @@ from xml.dom import minidom
 class GeneralSimulationParameters:
     def __init__(self):
         self.file = minidom.Document()
-        self.continue_previous_simulation = False
+        self.continue_previous_simulation = True
         self.number_of_spatial_dimensions = 3
         self.number_of_time_steps = 1
         self.time_step_size = 0.001

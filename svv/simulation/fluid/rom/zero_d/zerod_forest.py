@@ -104,7 +104,7 @@ def export_0d_simulation(forest, network_id, inlets, steady=True, outdir=None, f
     else:
         outdir = outdir + os.sep + folder
     if not os.path.isdir(outdir):
-        os.mkdir(folder)
+        os.makedirs(outdir)
     path_to_0d_solver = None
     input_file = {'description': {'description of case': None,
                                   'analytical results': None},

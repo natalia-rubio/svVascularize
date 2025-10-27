@@ -48,6 +48,7 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
     face_boundaries = []
     for face in faces:
         face_trees.append(cKDTree(surface.points[face_vertices[face, :].flatten(), :]))
+        # Need extract_surface() here to ensure we have PolyData for extract_feature_edges()
         face_boundary = surface.extract_cells(face).extract_surface().extract_feature_edges(boundary_edges=True,
                                                                                              manifold_edges=False,
                                                                                              feature_edges=False,
@@ -56,9 +57,10 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
     new_faces = []
     new_idx = []
     for i, face in enumerate(faces):
+        # Need extract_surface() here to ensure we have PolyData for extract_feature_edges()
         face_cells = surface.extract_cells(face).extract_surface()
         face_boundary = face_cells.extract_feature_edges(boundary_edges=True, manifold_edges=False,
-                                                         feature_edges=False, non_manifold_edges=False)
+                                                          feature_edges=False, non_manifold_edges=False)
         annealed = False
         if face_cells.n_points == face_boundary.n_points and len(face_boundary.split_bodies()) == 1:
             if verbose:
@@ -104,10 +106,27 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
     lumen_boundaries = []
     lumen_boundary_trees = []
     for i in range(len(faces)):
+        # Need extract_surface() here because compute_normals() requires PolyData
         f = surface.extract_cells(faces[i]).extract_surface()
         tmp_bound_check = f.extract_feature_edges(boundary_edges=True, manifold_edges=False,
-                                                 feature_edges=False, non_manifold_edges=False)
-        tmp_bound_check = tmp_bound_check.split_bodies()
+                                                   feature_edges=False, non_manifold_edges=False)
+        
+        # Check if mesh has cells before calling split_bodies()
+        if tmp_bound_check.n_cells == 0:
+            # Empty mesh - create empty result
+            tmp_bound_check = []
+        else:
+            # Ensure mesh has connectivity information for split_bodies()
+            if 'RegionId' not in tmp_bound_check.cell_data:
+                # Try to build connectivity if it doesn't exist
+                try:
+                    tmp_bound_check = tmp_bound_check.connectivity()
+                except:
+                    # If connectivity fails, create a simple workaround
+                    # Create a single region ID for all cells
+                    tmp_bound_check.cell_data['RegionId'] = numpy.zeros(tmp_bound_check.n_cells, dtype=numpy.int32)
+            
+            tmp_bound_check = tmp_bound_check.split_bodies()
         n_boundary_loops = len(tmp_bound_check)
 
         # Multi-criteria classification using topology + geometry
@@ -338,10 +357,23 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
             tmp_wall_boundary_trees = []
             boundaries = f.extract_feature_edges(boundary_edges=True, manifold_edges=False,
                                                  feature_edges=False, non_manifold_edges=False)
-            boundaries = boundaries.split_bodies()
-            for j in range(boundaries.n_blocks):
-                tmp_wall_boundaries.append(boundaries[j])
-                tmp_wall_boundary_trees.append(cKDTree(boundaries[j].points))
+            
+            # Check if mesh has cells before calling split_bodies()
+            if boundaries.n_cells == 0:
+                boundaries = []
+            else:
+                # Ensure mesh has connectivity information for split_bodies()
+                if 'RegionId' not in boundaries.cell_data:
+                    try:
+                        boundaries = boundaries.connectivity()
+                    except:
+                        boundaries.cell_data['RegionId'] = numpy.zeros(boundaries.n_cells, dtype=numpy.int32)
+                
+                boundaries = boundaries.split_bodies()
+            if len(boundaries) > 0:
+                for j in range(boundaries.n_blocks):
+                    tmp_wall_boundaries.append(boundaries[j])
+                    tmp_wall_boundary_trees.append(cKDTree(boundaries[j].points))
             wall_boundaries.append(tmp_wall_boundaries)
             wall_boundary_trees.append(tmp_wall_boundary_trees)
             iscap.append(0)
@@ -436,13 +468,19 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
         global_nodes = mesh.points
         global_node_tree = cKDTree(global_nodes)
         global_elements = mesh.cell_connectivity.reshape(-1, 4)
-        global_elements = numpy.sort(global_elements, axis=1)
-        tet_faces = []
-        for i in tqdm.trange(global_elements.shape[0], desc="Building tetrahedral faces", leave=False):
+        # Create a hash map from face node tuples to element IDs
+        # This is more reliable than using KDTree on node IDs
+        tet_face_to_element = {}
+        for i in tqdm.trange(global_elements.shape[0], desc="Building tetrahedral face map", leave=False):
+            element_nodes = global_elements[i]
+            # Create all 4 faces of the tetrahedron
             for j in range(4):
-                idx = set(list(range(4))) - set([j])
-                tet_faces.append(global_elements[i, list(idx)])
-        tet_face_tree = cKDTree(tet_faces)
+                # Get the 3 nodes that form this face (excluding node j)
+                face_nodes = numpy.array([element_nodes[k] for k in range(4) if k != j])
+                # Sort nodes to create a canonical key
+                face_key = tuple(sorted(face_nodes))
+                # Map this face to its parent element
+                tet_face_to_element[face_key] = i
     #for i, cap in enumerate(iscap):
     #    if not cap == 1:
     #        walls.append(faces[i])
@@ -453,26 +491,108 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
     wall_boundaries = []
     for i in tqdm.trange(len(walls), desc="Mapping wall surfaces <-> mesh ids", leave=False):
         wall_cells = surface.extract_cells(walls[i])
+        # Need to call extract_surface() to get PolyData (for .faces attribute)
+        # BUT use the ORIGINAL surface coordinates for node matching to avoid precision issues
         wall_surface = wall_cells.extract_surface()
         if not isinstance(mesh, type(None)):
             wall_surface.point_data["GlobalNodeID"] = numpy.zeros(wall_surface.n_points, dtype=int)
             wall_surface.cell_data['GlobalElementID'] = numpy.zeros(wall_surface.n_cells, dtype=int)
             wall_surface.cell_data['ModelFaceID'] = numpy.ones(wall_surface.n_cells, dtype=int)
-            _, indices = global_node_tree.query(wall_surface.points)
-            wall_surface.point_data["GlobalNodeID"] = indices.astype(int)
+            # Query nearest nodes with larger search to handle any precision issues
+            # Using k=5 to get multiple candidates and choose the closest
+            k_neighbors = min(5, len(global_nodes))
+            distances, indices = global_node_tree.query(wall_surface.points, k=k_neighbors)
+            # Take the closest match (first column)
+            if k_neighbors > 1:
+                indices = indices[:, 0]
+                distances = distances[:, 0]
+            # Check for coordinate mismatches
+            max_dist = numpy.max(distances)
+            if max_dist > 1e-10:
+                n_mismatch = numpy.sum(distances > 1e-10)
+                print(f"WARNING: Wall surface has {n_mismatch} points with coordinate mismatch > 1e-10")
+                print(f"  Max distance: {max_dist}")
+                print(f"  This suggests the surface was extracted with different precision than the volume mesh")
+                print(f"  Attempting to use nearest nodes, but this may cause face-to-element mapping errors")
+                # For points with large mismatch, print details
+                large_mismatch = numpy.where(distances > 1e-6)[0]
+                if len(large_mismatch) > 0:
+                    print(f"\n  {len(large_mismatch)} points have distance > 1e-6:")
+                    for idx in large_mismatch[:5]:  # Show first 5
+                        print(f"    Point {idx}: distance = {distances[idx]}")
+                        print(f"      Face coords: {wall_surface.points[idx]}")
+                        print(f"      Mesh coords: {global_nodes[indices[idx]]}")
+                if max_dist > 1e-3:
+                    raise ValueError(f"Wall surface points are too far from mesh nodes (max dist: {max_dist}). Mesh/surface mismatch!")
+            # NOTE: svMultiPhysics expects 1-based GlobalNodeID in VTK files (it subtracts 1 when reading)
+            # CRITICAL: Must be int32, not int64! SafeDownCast to vtkIntArray will fail otherwise
+            wall_surface.point_data["GlobalNodeID"] = (indices + 1).astype(numpy.int32)
             # Assign Global Element IDs
-            wall_faces = wall_surface.point_data["GlobalNodeID"][wall_surface.faces]
-            wall_faces = wall_faces.reshape(-1, 4)[:, 1:]
-            wall_faces = numpy.sort(wall_faces, axis=1)
-            _, indices = tet_face_tree.query(wall_faces)
-            wall_surface.cell_data["GlobalElementID"] = indices // 4
-            wall_surface.cell_data["GlobalElementID"] = wall_surface.cell_data["GlobalElementID"].astype(int)
+            # Debug: Check faces shape and content
+            print(f"Debug: wall_surface.faces shape: {wall_surface.faces.shape}")
+            print(f"Debug: wall_surface.faces max index: {numpy.max(wall_surface.faces) if wall_surface.faces.size > 0 else 'empty'}")
+            print(f"Debug: wall_surface.n_points: {wall_surface.n_points}")
+            print(f"Debug: GlobalNodeID shape: {wall_surface.point_data['GlobalNodeID'].shape}")
+            
+            # Check if faces indices are within bounds
+            if wall_surface.faces.size > 0:
+                max_face_index = numpy.max(wall_surface.faces)
+                if max_face_index >= wall_surface.n_points:
+                    print(f"WARNING: Face index {max_face_index} >= n_points {wall_surface.n_points}")
+                    # Filter out invalid faces
+                    valid_faces = wall_surface.faces[wall_surface.faces < wall_surface.n_points]
+                    if len(valid_faces) == 0:
+                        print("ERROR: No valid faces found")
+                        wall_faces = numpy.array([])
+                    else:
+                        wall_faces = wall_surface.point_data["GlobalNodeID"][valid_faces]
+                        # Check if we have enough elements to reshape
+                        if len(wall_faces) % 4 == 0:
+                            wall_faces = wall_faces.reshape(-1, 4)[:, 1:]  # Extract the 3 nodes (skip VTK cell type)
+                        else:
+                            print(f"WARNING: Cannot reshape {len(wall_faces)} elements into 4-element groups")
+                            wall_faces = numpy.array([])
+                else:
+                    wall_faces = wall_surface.point_data["GlobalNodeID"][wall_surface.faces]
+                    wall_faces = wall_faces.reshape(-1, 4)[:, 1:]  # Extract the 3 nodes (skip VTK cell type)
+            else:
+                print("WARNING: wall_surface.faces is empty")
+                wall_faces = numpy.array([])
+            if wall_faces.shape[0] > 0:
+                element_ids = numpy.zeros(wall_faces.shape[0], dtype=int)
+                for face_idx in range(wall_faces.shape[0]):
+                    # GlobalNodeID is 1-based, but hash map uses 0-based, so subtract 1
+                    face_nodes_0based = tuple(sorted(wall_faces[face_idx] - 1))
+                    if face_nodes_0based in tet_face_to_element:
+                        element_ids[face_idx] = tet_face_to_element[face_nodes_0based] + 1  # 1-based indexing
+                    else:
+                        raise ValueError(f"Wall face {face_idx} with nodes {face_nodes_0based} not found in volume mesh")
+                # CRITICAL: Must be int32! SafeDownCast to vtkIntArray will fail with int64
+                wall_surface.cell_data["GlobalElementID"] = element_ids.astype(numpy.int32)
+            else:
+                print("WARNING: No valid wall faces found, skipping GlobalElementID assignment")
+                # Create a dummy array with the right size
+                wall_surface.cell_data["GlobalElementID"] = numpy.zeros(wall_surface.n_cells, dtype=numpy.int32)
         boundaries = wall_surface.extract_feature_edges(boundary_edges=True, manifold_edges=False,
                                                              feature_edges=False, non_manifold_edges=False)
-        boundaries = boundaries.split_bodies()
+        
+        # Check if mesh has cells before calling split_bodies()
+        if boundaries.n_cells == 0:
+            boundaries = []
+        else:
+            # Ensure mesh has connectivity information for split_bodies()
+            if 'RegionId' not in boundaries.cell_data:
+                try:
+                    boundaries = boundaries.connectivity()
+                except:
+                    boundaries.cell_data['RegionId'] = numpy.zeros(boundaries.n_cells, dtype=numpy.int32)
+            
+            boundaries = boundaries.split_bodies()
+        
         tmp = []
-        for j in range(boundaries.n_blocks):
-            tmp.append(cKDTree(boundaries[j].points))
+        if len(boundaries) > 0:
+            for j in range(boundaries.n_blocks):
+                tmp.append(cKDTree(boundaries[j].points))
         wall_surfaces.append(wall_surface)
         wall_boundaries.append(tmp)
     # Map the surface ids to the mesh ids for the caps
@@ -481,21 +601,86 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
     for i in tqdm.trange(len(caps), desc="Mapping cap surfaces <-> mesh ids", leave=False):
         face_cap = caps[i]
         cap_cells = surface.extract_cells(face_cap)
+        # Need to call extract_surface() to get PolyData (for .faces attribute)
         cap_surface = cap_cells.extract_surface()
         if not isinstance(mesh, type(None)):
             cap_surface.point_data["GlobalNodeID"] = numpy.zeros(cap_surface.n_points, dtype=int)
             cap_surface.cell_data["GlobalElementID"] = numpy.zeros(cap_surface.n_cells, dtype=int)
             cap_surface.cell_data["ModelFaceID"] = numpy.ones(cap_surface.n_cells, dtype=int) * (i + 2)
             # Assign Global Node IDs
-            _, indices = global_node_tree.query(cap_surface.points)
-            cap_surface.point_data["GlobalNodeID"] = indices.astype(int)
+            distances, indices = global_node_tree.query(cap_surface.points)
+            max_dist = numpy.max(distances)
+            if max_dist > 1e-10:
+                print(f"WARNING: Cap {i} surface has {numpy.sum(distances > 1e-10)} points with coordinate mismatch > 1e-10")
+                print(f"  Max distance: {max_dist}")
+            # NOTE: svMultiPhysics expects 1-based GlobalNodeID in VTK files (it subtracts 1 when reading)
+            # CRITICAL: Must be int32, not int64! SafeDownCast to vtkIntArray will fail otherwise
+            cap_surface.point_data["GlobalNodeID"] = (indices + 1).astype(numpy.int32)
             # Assign Global Element IDs
+            # Debug: Check faces shape and content
+            print(f"Debug: cap_surface.faces shape: {cap_surface.faces.shape}")
+            print(f"Debug: cap_surface.faces max index: {numpy.max(cap_surface.faces) if cap_surface.faces.size > 0 else 'empty'}")
+            print(f"Debug: cap_surface.n_points: {cap_surface.n_points}")
+            
+            # Check if faces indices are within bounds
+            if cap_surface.faces.size > 0:
+                max_face_index = numpy.max(cap_surface.faces)
+                if max_face_index >= cap_surface.n_points:
+                    print(f"WARNING: Cap face index {max_face_index} >= n_points {cap_surface.n_points}")
+                    # Filter out invalid faces
+                    valid_faces = cap_surface.faces[cap_surface.faces < cap_surface.n_points]
+                    if len(valid_faces) == 0:
+                        print("ERROR: No valid cap faces found")
+                        cap_faces = numpy.array([])
+                    else:
+                        cap_faces = cap_surface.point_data["GlobalNodeID"][valid_faces]
+                        # Check if we have enough elements to reshape
+                        if len(cap_faces) % 4 == 0:
+                            cap_faces = cap_faces.reshape(-1, 4)[:, 1:]  # Extract the 3 nodes (skip VTK cell type)
+                        else:
+                            print(f"WARNING: Cannot reshape {len(cap_faces)} cap elements into 4-element groups")
+                            cap_faces = numpy.array([])
+                else:
+                    cap_faces = cap_surface.point_data["GlobalNodeID"][cap_surface.faces]
+                    cap_faces = cap_faces.reshape(-1, 4)[:, 1:]  # Extract the 3 nodes (skip VTK cell type)
+            else:
+                print("WARNING: cap_surface.faces is empty")
+                cap_faces = numpy.array([])
+            if cap_faces.shape[0] > 0:
+                element_ids = numpy.zeros(cap_faces.shape[0], dtype=int)
+                for face_idx in range(cap_faces.shape[0]):
+                    # GlobalNodeID is 1-based, but hash map uses 0-based, so subtract 1
+                    face_nodes_0based = tuple(sorted(cap_faces[face_idx] - 1))
+                    if face_nodes_0based in tet_face_to_element:
+                        element_ids[face_idx] = tet_face_to_element[face_nodes_0based] + 1  # 1-based indexing
+                    else:
+                        raise ValueError(f"Cap face {face_idx} with nodes {face_nodes_0based} not found in volume mesh")
+                # CRITICAL: Must be int32! SafeDownCast to vtkIntArray will fail with int64
+                cap_surface.cell_data["GlobalElementID"] = element_ids.astype(numpy.int32)
+            else:
+                print("WARNING: No valid cap faces found, skipping GlobalElementID assignment")
+                # Create a dummy array with the right size
+                cap_surface.cell_data["GlobalElementID"] = numpy.zeros(cap_surface.n_cells, dtype=numpy.int32)
         boundaries = cap_surface.extract_feature_edges(boundary_edges=True, manifold_edges=False,
                                                            feature_edges=False, non_manifold_edges=False)
-        boundaries = boundaries.split_bodies()
+        
+        # Check if mesh has cells before calling split_bodies()
+        if boundaries.n_cells == 0:
+            boundaries = []
+        else:
+            # Ensure mesh has connectivity information for split_bodies()
+            if 'RegionId' not in boundaries.cell_data:
+                try:
+                    boundaries = boundaries.connectivity()
+                except:
+                    boundaries.cell_data['RegionId'] = numpy.zeros(boundaries.n_cells, dtype=numpy.int32)
+            
+            boundaries = boundaries.split_bodies()
+        
         tmp = []
-        for j in range(boundaries.n_blocks):
-            tmp.append(cKDTree(boundaries[j].points))
+        if len(boundaries) > 0:
+            for j in range(boundaries.n_blocks):
+                tmp.append(cKDTree(boundaries[j].points))
         cap_boundaries.append(tmp)
         cap_surfaces.append(cap_surface)
 
@@ -505,21 +690,86 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
     for i in tqdm.trange(len(lumens), desc="Mapping lumen surfaces <-> mesh ids", leave=False):
         face_lumen = lumens[i]
         lumen_cells = surface.extract_cells(face_lumen)
+        # Need to call extract_surface() to get PolyData (for .faces attribute)
         lumen_surface = lumen_cells.extract_surface()
         if not isinstance(mesh, type(None)):
             lumen_surface.point_data["GlobalNodeID"] = numpy.zeros(lumen_surface.n_points, dtype=int)
             lumen_surface.cell_data["GlobalElementID"] = numpy.zeros(lumen_surface.n_cells, dtype=int)
             lumen_surface.cell_data["ModelFaceID"] = numpy.ones(lumen_surface.n_cells, dtype=int) * (len(caps) + i + 2)
             # Assign Global Node IDs
-            _, indices = global_node_tree.query(lumen_surface.points)
-            lumen_surface.point_data["GlobalNodeID"] = indices.astype(int)
+            distances, indices = global_node_tree.query(lumen_surface.points)
+            max_dist = numpy.max(distances)
+            if max_dist > 1e-10:
+                print(f"WARNING: Lumen {i} surface has {numpy.sum(distances > 1e-10)} points with coordinate mismatch > 1e-10")
+                print(f"  Max distance: {max_dist}")
+            # NOTE: svMultiPhysics expects 1-based GlobalNodeID in VTK files (it subtracts 1 when reading)
+            # CRITICAL: Must be int32, not int64! SafeDownCast to vtkIntArray will fail otherwise
+            lumen_surface.point_data["GlobalNodeID"] = (indices + 1).astype(numpy.int32)
             # Assign Global Element IDs
+            # Debug: Check faces shape and content
+            print(f"Debug: lumen_surface.faces shape: {lumen_surface.faces.shape}")
+            print(f"Debug: lumen_surface.faces max index: {numpy.max(lumen_surface.faces) if lumen_surface.faces.size > 0 else 'empty'}")
+            print(f"Debug: lumen_surface.n_points: {lumen_surface.n_points}")
+            
+            # Check if faces indices are within bounds
+            if lumen_surface.faces.size > 0:
+                max_face_index = numpy.max(lumen_surface.faces)
+                if max_face_index >= lumen_surface.n_points:
+                    print(f"WARNING: Lumen face index {max_face_index} >= n_points {lumen_surface.n_points}")
+                    # Filter out invalid faces
+                    valid_faces = lumen_surface.faces[lumen_surface.faces < lumen_surface.n_points]
+                    if len(valid_faces) == 0:
+                        print("ERROR: No valid lumen faces found")
+                        lumen_faces = numpy.array([])
+                    else:
+                        lumen_faces = lumen_surface.point_data["GlobalNodeID"][valid_faces]
+                        # Check if we have enough elements to reshape
+                        if len(lumen_faces) % 4 == 0:
+                            lumen_faces = lumen_faces.reshape(-1, 4)[:, 1:]  # Extract the 3 nodes (skip VTK cell type)
+                        else:
+                            print(f"WARNING: Cannot reshape {len(lumen_faces)} lumen elements into 4-element groups")
+                            lumen_faces = numpy.array([])
+                else:
+                    lumen_faces = lumen_surface.point_data["GlobalNodeID"][lumen_surface.faces]
+                    lumen_faces = lumen_faces.reshape(-1, 4)[:, 1:]  # Extract the 3 nodes (skip VTK cell type)
+            else:
+                print("WARNING: lumen_surface.faces is empty")
+                lumen_faces = numpy.array([])
+            if lumen_faces.shape[0] > 0:
+                element_ids = numpy.zeros(lumen_faces.shape[0], dtype=int)
+                for face_idx in range(lumen_faces.shape[0]):
+                    # GlobalNodeID is 1-based, but hash map uses 0-based, so subtract 1
+                    face_nodes_0based = tuple(sorted(lumen_faces[face_idx] - 1))
+                    if face_nodes_0based in tet_face_to_element:
+                        element_ids[face_idx] = tet_face_to_element[face_nodes_0based] + 1  # 1-based indexing
+                    else:
+                        raise ValueError(f"Lumen face {face_idx} with nodes {face_nodes_0based} not found in volume mesh")
+                # CRITICAL: Must be int32! SafeDownCast to vtkIntArray will fail with int64
+                lumen_surface.cell_data["GlobalElementID"] = element_ids.astype(numpy.int32)
+            else:
+                print("WARNING: No valid lumen faces found, skipping GlobalElementID assignment")
+                # Create a dummy array with the right size
+                lumen_surface.cell_data["GlobalElementID"] = numpy.zeros(lumen_surface.n_cells, dtype=numpy.int32)
         boundaries = lumen_surface.extract_feature_edges(boundary_edges=True, manifold_edges=False,
                                                            feature_edges=False, non_manifold_edges=False)
-        boundaries = boundaries.split_bodies()
+        
+        # Check if mesh has cells before calling split_bodies()
+        if boundaries.n_cells == 0:
+            boundaries = []
+        else:
+            # Ensure mesh has connectivity information for split_bodies()
+            if 'RegionId' not in boundaries.cell_data:
+                try:
+                    boundaries = boundaries.connectivity()
+                except:
+                    boundaries.cell_data['RegionId'] = numpy.zeros(boundaries.n_cells, dtype=numpy.int32)
+            
+            boundaries = boundaries.split_bodies()
+        
         tmp = []
-        for j in range(boundaries.n_blocks):
-            tmp.append(cKDTree(boundaries[j].points))
+        if len(boundaries) > 0:
+            for j in range(boundaries.n_blocks):
+                tmp.append(cKDTree(boundaries[j].points))
         lumen_boundaries.append(tmp)
         lumen_surfaces.append(lumen_surface)
 
