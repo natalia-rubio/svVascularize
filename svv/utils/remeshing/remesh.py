@@ -252,6 +252,11 @@ def remesh_surface_2d(boundary, autofix=False, ar=None, hausd=None, hgrad=None, 
     else:
         raise NotImplementedError("Operating system not supported.")
     devnull = open(os.devnull, 'w')
+    if os.path.exists("tmp.sol"):
+        try:
+            os.remove("tmp.sol")
+        except Exception:
+            pass
     executable_list = [_EXE_, "tmp.mesh"]
     if ar is not None:
         executable_list.extend(["-ar", str(ar)])
@@ -325,6 +330,11 @@ def remesh_surface_2d(boundary, autofix=False, ar=None, hausd=None, hgrad=None, 
     os.remove("tmp.mesh")
     os.remove("tmp.o.sol")
     os.remove("tmp.o.mesh")
+    if os.path.exists("tmp.sol"):
+        try:
+            os.remove("tmp.sol")
+        except Exception:
+            pass
     return remeshed_surface
 
 
@@ -439,14 +449,14 @@ def remesh_surface(pv_polydata_object, autofix=True, ar=None, hausd=None, hgrad=
     _mesh_ = pv.PolyData(pv_polydata_object.points, pv_polydata_object.faces)
     pv.save_meshio("tmp.mesh", _mesh_)
     hausd = 0.1
-    # Create solution file if hmin or hmax are specified
+    # # Create solution file if hmin or hmax are specified
     use_solution_file = False
-    if hmin is not None or hmax is not None:
-        use_solution_file = True
-        # Use hmin as the target size, or hmax/2 if hmin is not specified
-        target_size = hmin if hmin is not None else (hmax / 2.0 if hmax is not None else 0.1)
-        write_medit_sol(_mesh_, "tmp.sol", array_name="MeshSizingFunction", scale=1, default_size=target_size)
-        print(f"Created solution file with target size: {target_size}")
+    # if hmin is not None or hmax is not None:
+    #     use_solution_file = True
+    #     # Use hmin as the target size, or hmax/2 if hmin is not specified
+    #     target_size = hmin if hmin is not None else (hmax / 2.0 if hmax is not None else 0.1)
+    #     write_medit_sol(_mesh_, "tmp.sol", array_name="MeshSizingFunction", scale=1, default_size=target_size)
+    #     print(f"Created solution file with target size: {target_size}")
     
     if not isinstance(required_triangles, type(None)):
         add_required("tmp.mesh", required_triangles)
@@ -1056,5 +1066,10 @@ def sphere_refinement(
     os.remove("tmp.o.sol")
     os.remove("tmp.o.mesh")
     os.remove("in.sol")
+    if os.path.exists("tmp.sol"):
+        try:
+            os.remove("tmp.sol")
+        except Exception:
+            pass
     print("Sphere refinement completed.")
     return remeshed_surface

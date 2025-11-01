@@ -2,9 +2,14 @@ import numpy
 import tqdm
 from scipy.spatial import cKDTree
 from collections import defaultdict
+try:
+    import pyvista as pv
+    PYVISTA_AVAILABLE = True
+except ImportError:
+    PYVISTA_AVAILABLE = False
 
 
-def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False, combine_walls: bool = True):
+def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = True, combine_walls: bool = True):
     """
     This function extracts the boundary domains from a given
     surface mesh file in PolyData format. By default, a
@@ -43,6 +48,11 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
     collapsed_elements = numpy.isclose(element_quality.cell_data["CellQuality"], 0.0, atol=1e-3)
     faces = partition(unallocated_elements, face_vertices, element_normals, crease_angle, vertex_map, edge_neighbors,
                       collapsed_elements)
+    
+    # Visualize partitioned faces (each face in a different color)
+    #if PYVISTA_AVAILABLE:
+        #visualize_partitioned_faces(surface, faces, verbose=verbose)
+    
     # Add a reconnecting step to anneal partitioned faces that are degenerate or collapsed into faces
     face_trees = []
     face_boundaries = []
@@ -558,21 +568,16 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
             else:
                 print("WARNING: wall_surface.faces is empty")
                 wall_faces = numpy.array([])
-            if wall_faces.shape[0] > 0:
-                element_ids = numpy.zeros(wall_faces.shape[0], dtype=int)
-                for face_idx in range(wall_faces.shape[0]):
-                    # GlobalNodeID is 1-based, but hash map uses 0-based, so subtract 1
-                    face_nodes_0based = tuple(sorted(wall_faces[face_idx] - 1))
-                    if face_nodes_0based in tet_face_to_element:
-                        element_ids[face_idx] = tet_face_to_element[face_nodes_0based] + 1  # 1-based indexing
-                    else:
-                        raise ValueError(f"Wall face {face_idx} with nodes {face_nodes_0based} not found in volume mesh")
-                # CRITICAL: Must be int32! SafeDownCast to vtkIntArray will fail with int64
-                wall_surface.cell_data["GlobalElementID"] = element_ids.astype(numpy.int32)
-            else:
-                print("WARNING: No valid wall faces found, skipping GlobalElementID assignment")
-                # Create a dummy array with the right size
-                wall_surface.cell_data["GlobalElementID"] = numpy.zeros(wall_surface.n_cells, dtype=numpy.int32)
+            element_ids = numpy.zeros(wall_faces.shape[0], dtype=int)
+            for face_idx in range(wall_faces.shape[0]):
+                # GlobalNodeID is 1-based, but hash map uses 0-based, so subtract 1
+                face_nodes_0based = tuple(sorted(wall_faces[face_idx] - 1))
+                if face_nodes_0based in tet_face_to_element:
+                    element_ids[face_idx] = tet_face_to_element[face_nodes_0based] + 1  # 1-based indexing
+                else:
+                    raise ValueError(f"Wall face {face_idx} with nodes {face_nodes_0based} not found in volume mesh")
+            # CRITICAL: Must be int32! SafeDownCast to vtkIntArray will fail with int64
+            wall_surface.cell_data["GlobalElementID"] = element_ids.astype(numpy.int32)
         boundaries = wall_surface.extract_feature_edges(boundary_edges=True, manifold_edges=False,
                                                              feature_edges=False, non_manifold_edges=False)
         
@@ -646,21 +651,16 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
             else:
                 print("WARNING: cap_surface.faces is empty")
                 cap_faces = numpy.array([])
-            if cap_faces.shape[0] > 0:
-                element_ids = numpy.zeros(cap_faces.shape[0], dtype=int)
-                for face_idx in range(cap_faces.shape[0]):
-                    # GlobalNodeID is 1-based, but hash map uses 0-based, so subtract 1
-                    face_nodes_0based = tuple(sorted(cap_faces[face_idx] - 1))
-                    if face_nodes_0based in tet_face_to_element:
-                        element_ids[face_idx] = tet_face_to_element[face_nodes_0based] + 1  # 1-based indexing
-                    else:
-                        raise ValueError(f"Cap face {face_idx} with nodes {face_nodes_0based} not found in volume mesh")
-                # CRITICAL: Must be int32! SafeDownCast to vtkIntArray will fail with int64
-                cap_surface.cell_data["GlobalElementID"] = element_ids.astype(numpy.int32)
-            else:
-                print("WARNING: No valid cap faces found, skipping GlobalElementID assignment")
-                # Create a dummy array with the right size
-                cap_surface.cell_data["GlobalElementID"] = numpy.zeros(cap_surface.n_cells, dtype=numpy.int32)
+            element_ids = numpy.zeros(cap_faces.shape[0], dtype=int)
+            for face_idx in range(cap_faces.shape[0]):
+                # GlobalNodeID is 1-based, but hash map uses 0-based, so subtract 1
+                face_nodes_0based = tuple(sorted(cap_faces[face_idx] - 1))
+                if face_nodes_0based in tet_face_to_element:
+                    element_ids[face_idx] = tet_face_to_element[face_nodes_0based] + 1  # 1-based indexing
+                else:
+                    raise ValueError(f"Cap face {face_idx} with nodes {face_nodes_0based} not found in volume mesh")
+            # CRITICAL: Must be int32! SafeDownCast to vtkIntArray will fail with int64
+            cap_surface.cell_data["GlobalElementID"] = element_ids.astype(numpy.int32)
         boundaries = cap_surface.extract_feature_edges(boundary_edges=True, manifold_edges=False,
                                                            feature_edges=False, non_manifold_edges=False)
         
@@ -735,21 +735,16 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
             else:
                 print("WARNING: lumen_surface.faces is empty")
                 lumen_faces = numpy.array([])
-            if lumen_faces.shape[0] > 0:
-                element_ids = numpy.zeros(lumen_faces.shape[0], dtype=int)
-                for face_idx in range(lumen_faces.shape[0]):
-                    # GlobalNodeID is 1-based, but hash map uses 0-based, so subtract 1
-                    face_nodes_0based = tuple(sorted(lumen_faces[face_idx] - 1))
-                    if face_nodes_0based in tet_face_to_element:
-                        element_ids[face_idx] = tet_face_to_element[face_nodes_0based] + 1  # 1-based indexing
-                    else:
-                        raise ValueError(f"Lumen face {face_idx} with nodes {face_nodes_0based} not found in volume mesh")
-                # CRITICAL: Must be int32! SafeDownCast to vtkIntArray will fail with int64
-                lumen_surface.cell_data["GlobalElementID"] = element_ids.astype(numpy.int32)
-            else:
-                print("WARNING: No valid lumen faces found, skipping GlobalElementID assignment")
-                # Create a dummy array with the right size
-                lumen_surface.cell_data["GlobalElementID"] = numpy.zeros(lumen_surface.n_cells, dtype=numpy.int32)
+            element_ids = numpy.zeros(lumen_faces.shape[0], dtype=int)
+            for face_idx in range(lumen_faces.shape[0]):
+                # GlobalNodeID is 1-based, but hash map uses 0-based, so subtract 1
+                face_nodes_0based = tuple(sorted(lumen_faces[face_idx] - 1))
+                if face_nodes_0based in tet_face_to_element:
+                    element_ids[face_idx] = tet_face_to_element[face_nodes_0based] + 1  # 1-based indexing
+                else:
+                    raise ValueError(f"Lumen face {face_idx} with nodes {face_nodes_0based} not found in volume mesh")
+            # CRITICAL: Must be int32! SafeDownCast to vtkIntArray will fail with int64
+            lumen_surface.cell_data["GlobalElementID"] = element_ids.astype(numpy.int32)
         boundaries = lumen_surface.extract_feature_edges(boundary_edges=True, manifold_edges=False,
                                                            feature_edges=False, non_manifold_edges=False)
         
@@ -1032,6 +1027,92 @@ def build_face_neighbors(mesh):
     for i in range(len(neighbors_list)):
         neighbors_map[i] = tuple(neighbors_list[i])
     return neighbors_map
+
+
+def visualize_partitioned_faces(surface, faces, verbose=False):
+    """
+    Visualize the partitioned faces with each face partition in a different color.
+    
+    Parameters
+    ----------
+    surface : pyvista.PolyData
+        The surface mesh
+    faces : list
+        List of face partitions, where each element is a list of cell indices
+    verbose : bool
+        If True, print information about the visualization
+    """
+    if not PYVISTA_AVAILABLE:
+        if verbose:
+            print("Warning: PyVista not available, skipping visualization")
+        return
+    
+    if verbose:
+        print(f"Visualizing {len(faces)} partitioned faces...")
+    
+    # Create a color array for each cell
+    n_cells = surface.n_cells
+    face_ids = numpy.full(n_cells, -1, dtype=int)
+    
+    # Assign face IDs to cells
+    for face_idx, face in enumerate(faces):
+        for cell_idx in face:
+            if 0 <= cell_idx < n_cells:
+                face_ids[cell_idx] = face_idx
+    
+    # Create a copy of the surface with face IDs
+    viz_surface = surface.copy()
+    viz_surface.cell_data["FaceID"] = face_ids
+    
+    # Generate colors for each face
+    # Use a colormap that provides distinct colors
+    n_faces = len(faces)
+    if n_faces > 0:
+        # Generate distinct colors using a colormap
+        try:
+            import matplotlib.cm as cm
+            import matplotlib.pyplot as plt
+            # Use newer API if available, fallback to get_cmap
+            try:
+                colormap = cm.get_cmap('tab20')
+            except AttributeError:
+                # For newer matplotlib versions
+                colormap = plt.cm.get_cmap('tab20')
+            colors = numpy.array([colormap(i / max(n_faces - 1, 1))[:3] for i in range(n_faces)])
+        except (ImportError, AttributeError):
+            # Fallback: use predefined colors
+            predefined_colors = numpy.array([
+                [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0],
+                [1.0, 1.0, 0.0], [1.0, 0.0, 1.0], [0.0, 1.0, 1.0],
+                [0.5, 0.0, 0.0], [0.0, 0.5, 0.0], [0.0, 0.0, 0.5],
+                [0.5, 0.5, 0.0], [0.5, 0.0, 0.5], [0.0, 0.5, 0.5],
+                [1.0, 0.5, 0.0], [0.5, 1.0, 0.0], [0.0, 1.0, 0.5],
+                [0.5, 0.0, 1.0], [1.0, 0.0, 0.5], [0.0, 0.5, 1.0],
+                [0.8, 0.2, 0.2], [0.2, 0.8, 0.2], [0.2, 0.2, 0.8]
+            ])
+            # Cycle through predefined colors if we have more faces
+            colors = numpy.tile(predefined_colors, (n_faces // len(predefined_colors) + 1, 1))[:n_faces]
+        
+        # Create a plotter
+        plotter = pv.Plotter()
+        plotter.add_text(f"Partitioned Faces (n={n_faces})", font_size=12)
+        
+        # Add each face partition with its color
+        for face_idx, face in enumerate(faces):
+            if len(face) == 0:
+                continue
+            
+            # Extract cells for this face
+            face_mesh = surface.extract_cells(face)
+            if face_mesh.n_cells > 0:
+                color = colors[face_idx % len(colors)]
+                plotter.add_mesh(face_mesh, color=color, label=f"Face {face_idx}")
+        
+        # Add legend if not too many faces
+        if n_faces <= 20:
+            plotter.add_legend()
+        
+        plotter.show()
 
 
 def correct_normals(cell_normals, face_vertices, mesh):

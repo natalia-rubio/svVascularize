@@ -158,7 +158,7 @@ class Simulation(object):
                             extension_scale += 1.0
                     root_extension = self.synthetic_object.data[0, 21] * extension_scale
                     self.synthetic_object.data[0, 0:3] -= root_extension * self.synthetic_object.data.get('w_basis', 0)
-                fluid_surface_mesh = self.synthetic_object.export_solid(watertight=True, smooth_junctions=smooth_junctions, hsize=hsize)
+                fluid_surface_mesh = self.synthetic_object.export_solid(watertight=True, smooth_junctions=smooth_junctions, hsize=hsize, cap_resolution=20)
                 tet_fluid = tetgen.TetGen(fluid_surface_mesh)
 
                 try:
@@ -224,6 +224,7 @@ class Simulation(object):
                                 fluid_volume_mesh, fluid_interior, fluid_boundary = fluid_boundary_layers.generate()
                                 success = True
                                 print("Generated boundary layers on attempt {}/{}.".format(i+1, boundary_layer_attempts))
+
                             except:
                                 print("Failed to generate boundary layers {}/{}.\n".format(i+1, boundary_layer_attempts))
                                 fluid_boundary = None
@@ -247,6 +248,8 @@ class Simulation(object):
                                                               layer_thickness=wall_thickness,
                                                               remesh_vol=False, combine=False)
                         _, _, fluid_wall = fluid_boundary_layers.generate()
+                        
+
                         # Perform tetrahedron re-orientation to ensure positive Jacobian
                         fluid_wall = remesh_volume(fluid_wall, nomove=True, noinsert=True, nosurf=True, verbosity=4)
                         if remesh_vol:
@@ -415,6 +418,7 @@ class Simulation(object):
                                         fluid_volume, fluid_interior, fluid_boundary = fluid_boundary_layers.generate()
                                         fluid_surface = fluid_volume.extract_surface()
                                         success = True
+                                        
                                         print("Generated boundary layers on attempt {}/{}.".format(i + 1,
                                                                                                    boundary_layer_attempts))
                                     except:
@@ -424,8 +428,10 @@ class Simulation(object):
                                         fluid_interior = None
                                         success = False
                                         layer_thickness_ratio *= layer_thickness_ratio_adjustment
+                                        
                                     if success:
                                         break
+                                
                                 self.fluid_domain_boundary_layers.append(fluid_boundary)
                                 self.fluid_domain_interiors.append(fluid_interior)
                             else:
@@ -505,10 +511,12 @@ class Simulation(object):
         self.fluid_domain_meshes = []
         self.tissue_domain_meshes = []
         if isinstance(self.synthetic_object, svv.tree.tree.Tree):
+
             if len(self.fluid_domain_surface_meshes) > 0 and len(self.fluid_domain_volume_meshes) > 0:
                 # something is switched here... wall_surfaces are caps, lumen_surfaces are walls
                 assert (len(self.fluid_domain_surface_meshes) == 1)
                 assert (len(self.fluid_domain_volume_meshes) == 1)
+                
                 faces, caps, should_be_empty, walls, shared_boundaries = extract_faces(self.fluid_domain_surface_meshes[0],
                                                                       self.fluid_domain_volume_meshes[0],
                                                                       crease_angle=crease_angle, verbose=verbose)
@@ -870,7 +878,7 @@ class Simulation(object):
                         face.cell_data[array_name] = face.cell_data[array_name].astype(numpy.int32)
                         if not numpy.all(face.cell_data[array_name] > 0):
                             print("WARNING: Array {} contains non-positive values".format(array_name))
-                            #import pdb; pdb.set_trace()
+
                         #assert(numpy.all(face.cell_data[array_name] > 0))
                     face.save(os.path.join(mesh_surfaces_dir, "{}.vtp".format(name)))
                 else:

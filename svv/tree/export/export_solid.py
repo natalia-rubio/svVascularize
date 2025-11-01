@@ -326,7 +326,7 @@ def generate_tube(polyline, hsize=None):
         hsize = min(polyline['radius']) * 0.5
         print(f"Using provided hsize: {hsize}")
     # Force mesh size using hmin and hmax parameters
-    tube = remesh_surface(tube, hmin=hsize, hmax=hsize*2, noinsert = False, nomove = False, nosurf = False, hausd = 0.1, hgrad = -1.0,verbosity = 3)
+    tube = remesh_surface(tube, hmin=hsize, hmax=hsize*1.5, noinsert = False, nomove = False, nosurf = False, hausd = 0.1, hgrad = -1.0,verbosity = 3)
     tube = tube.compute_normals(auto_orient_normals=True)
     fix = pymeshfix.MeshFix(tube)
     fix.repair()
@@ -431,6 +431,15 @@ def build_watertight_solid(tree, cap_resolution=10, smooth_junctions=True,
         print(f"Junction statistics: {junction_stats}")
         
         # Apply smoothing
+        model = smooth_junctions_advanced(
+            model, 
+            tree.data, 
+            tree.vessel_map, 
+            tree.connectivity,
+            hsize=model.hsize if hasattr(model, 'hsize') else None,
+            cap_resolution=cap_resolution
+        )
+
         model = smooth_junctions_advanced(
             model, 
             tree.data, 

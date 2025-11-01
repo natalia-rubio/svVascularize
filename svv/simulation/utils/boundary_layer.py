@@ -23,7 +23,6 @@ class BoundaryLayer(object):
                  warp_vector_array="Normals", remesh_vol=False, combine=True):
         self.surface = surface
         self.caps = caps
-        #import pdb; pdb.set_trace()
         self.warp_vector_array = warp_vector_array
         self.surface_cells = {}
         self.surface_cell_array = self.surface.faces.reshape(-1, 4)[:, 1:]
@@ -81,7 +80,6 @@ class BoundaryLayer(object):
     def generate(self):
         verbose = True
         grid = deepcopy(self.surface)
-        #import pdb; pdb.set_trace()
         boundary_layer_cell_array = []
         boundary_layer_celltype_array = []
         cell_entity_ids_array = []
@@ -540,7 +538,6 @@ class BoundaryLayer(object):
             outer_surface_pt_ids.extend(cell.point_ids)
         print("Sorted inner and outer surface points.")
         outer = layers.extract_cells(outer_surface_cells)
-        #import pdb; pdb.set_trace()
         layers_tree = cKDTree(layers.points)
         dists, inds = layers_tree.query(outer.points, k=2)
         if np.any(dists[:, 1] == 0.0):
@@ -565,13 +562,12 @@ class BoundaryLayer(object):
 
             # Calculate the maximum distance (diagonal of the bounding box)
             max_distance = np.sqrt(dx**2 + dy**2 + dz**2)
-            
-            cap = remesh_surface_2d(boundaries[i], hmax = max_distance / 5, hmin=max_distance / 100,)
+            cap = remesh_surface_2d(boundaries[i], hsiz=max_distance/20)
             #cap = boundaries[i]
             #_, outer_cap_inds = outer_tree.query(cap.points)
             #cap.points[:boundaries[i].n_points, :] = outer.points[outer_cap_inds[:boundaries[i].n_points], :]
             caps.append(cap)
-        #import pdb; pdb.set_trace()
+            # cap looks good
         caps.insert(0, outer)
         
         print("Constructing outer surface...")
@@ -584,11 +580,11 @@ class BoundaryLayer(object):
         
         if not outer_total.is_manifold:
             print("Outer Surface is not manifold.")
-            #import pdb; pdb.set_trace()
+
             raise ValueError("Merged Outer Surface is not manifold.")
         else:
             print("Merged Outer Surface is manifold.")
-        #pdb.set_trace()
+
         outer_total_quality = outer_total.compute_cell_quality().cell_data["CellQuality"]
         if np.any(outer_total_quality < 0.0):
             warnings.warn("Outer Surface has inverted triangles.")
@@ -647,6 +643,7 @@ class BoundaryLayer(object):
         appender.MergePointsOn()
         appender.Update()
         combined_mesh = pv.wrap(appender.GetOutput())
+
         #combined_mesh = combined_mesh.clean()
         #combined_mesh = pv.merge([layers_volume, mesh_interior])
         #combined_mesh = combined_mesh.triangulate().clean()
