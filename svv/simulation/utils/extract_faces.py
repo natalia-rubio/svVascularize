@@ -461,6 +461,7 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = False
             _, indices = global_node_tree.query(wall_surface.points)
             wall_surface.point_data["GlobalNodeID"] = indices.astype(int)
             # Assign Global Element IDs
+            import pdb; pdb.set_trace()
             wall_faces = wall_surface.point_data["GlobalNodeID"][wall_surface.faces]
             wall_faces = wall_faces.reshape(-1, 4)[:, 1:]
             wall_faces = numpy.sort(wall_faces, axis=1)

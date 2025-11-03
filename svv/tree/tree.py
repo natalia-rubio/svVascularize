@@ -13,7 +13,7 @@ from svv.visualize.tree.show import show
 from svv.tree.branch.bifurcation import add_vessel, check_tree
 from svv.tree.export.export_solid import build_watertight_solid, build_merged_solid
 from svv.tree.export.export_centerlines import build_centerlines
-from svv.tree.utils.TreeManager import KDTreeManager, HNSWTree, USearchTree
+from svv.tree.utils.TreeManager import KDTreeManager, USearchTree
 from svv.tree.utils.c_extend import build_c_vessel_map
 from collections import ChainMap
 

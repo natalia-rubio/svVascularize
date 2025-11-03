@@ -438,6 +438,8 @@ def remesh_surface(pv_polydata_object, autofix=True, ar=None, hausd=None, hgrad=
     """
     _mesh_ = pv.PolyData(pv_polydata_object.points, pv_polydata_object.faces)
     pv.save_meshio("tmp.mesh", _mesh_)
+
+    use_solution_file = False
     if not isinstance(required_triangles, type(None)):
         add_required("tmp.mesh", required_triangles)
     if platform.system() == 'Windows':
@@ -459,6 +461,8 @@ def remesh_surface(pv_polydata_object, autofix=True, ar=None, hausd=None, hgrad=
         raise NotImplementedError("Operating system not supported.")
     devnull = open(os.devnull, 'w')
     executable_list = [_EXE_, "tmp.mesh"]
+    if use_solution_file:
+        executable_list.extend(["-sol", "tmp.sol"])
     if ar is not None:
         executable_list.extend(["-ar", str(ar)])
     if hausd is not None:
@@ -473,13 +477,13 @@ def remesh_surface(pv_polydata_object, autofix=True, ar=None, hausd=None, hgrad=
         executable_list.extend(["-hmin", str(hmin)])
     if hsiz is not None:
         executable_list.extend(["-hsiz", str(hsiz)])
-    if noinsert is not None:
+    if noinsert:
         executable_list.extend(["-noinsert"])
-    if nomove is not None:
+    if nomove:
         executable_list.extend(["-nomove"])
-    if nosurf is not None:
+    if nosurf:
         executable_list.extend(["-nosurf"])
-    if noswap is not None:
+    if noswap:
         executable_list.extend(["-noswap"])
     if nr is not None:
         executable_list.extend(["-nr"])
@@ -487,17 +491,21 @@ def remesh_surface(pv_polydata_object, autofix=True, ar=None, hausd=None, hgrad=
         executable_list.extend(["-optim"])
     if rn is not None:
         executable_list.extend(["-rn", str(rn)])
+    print(f"MMGS command: {' '.join(executable_list)}")
+    if os.path.exists("tmp.sol"):
+        os.remove("tmp.sol")
+
     if verbosity == 0:
         try:
             subprocess.check_call(executable_list, stdout=devnull, stderr=devnull)
         except:
-            os.chmod(_EXE_, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+            #os.chmod(_EXE_, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
             subprocess.check_call(executable_list, stdout=devnull, stderr=devnull)
     else:
         try:
             subprocess.check_call(executable_list)
         except:
-            os.chmod(_EXE_, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+            #os.chmod(_EXE_, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
             subprocess.check_call(executable_list)
     clean_medit("tmp.o.mesh")
     remesh_data = meshio.read("tmp.o.mesh")
