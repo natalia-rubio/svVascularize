@@ -307,10 +307,9 @@ def smooth_junctions_advanced(mesh, tree_data, vessel_map, connectivity,
     
     # try:
     #     # Extract faces to identify wall surfaces
-    faces, caps, should_be_empty, walls, shared_boundaries = extract_faces(mesh, None)
+    faces, should_be_empty, caps, walls, shared_boundaries  = extract_faces(mesh, None)
     if not len(caps) == 7:
         import pdb; pdb.set_trace()
-    #     # faces, walls, caps, shared_boundaries = extract_faces(mesh, None)
     # except Exception as e:
     #     print(f"Warning: Face extraction failed: {e}")
     #     print("Returning original mesh without smoothing.")
@@ -322,80 +321,76 @@ def smooth_junctions_advanced(mesh, tree_data, vessel_map, connectivity,
     
     # Apply smoothing to wall surfaces
     smoothed_walls = []
-    if len(walls) == 1:
-        wall = walls[0]
-        # Apply Taubin smoothing with boundary preservation
-        # Ensure wall is PolyData (smooth_taubin is a PolyData method)
-        if hasattr(wall, 'extract_surface'):
-            wall = wall.extract_surface()
-        #smoothed_wall = wall.smooth_taubin(n_iter=10,pass_band=0.05,normalize_coordinates=True , boundary_smoothing=True, feature_smoothing=True, non_manifold_smoothing = True)
-        smoothed_wall = wall
-        smoothed_walls.append(smoothed_wall)
-    
-    # try:
-        radius_factor = 4
-        junction_regions = identify_junction_regions(smoothed_wall, junctions, junction_radii, junction_points, radius_factor)
-        center_list = []; radius_list = []; local_edge_size_list = []
-        for region in junction_regions:
-            center = region.points.mean(axis=0).tolist()
-            radius = np.linalg.norm(region.points - center, axis=1).max()
-            local_edge_size = radius/(5 * radius_factor)
-            center_list.append(center); radius_list.append(radius); local_edge_size_list.append(local_edge_size)
+
+    wall = walls[0]
+    # Apply Taubin smoothing with boundary preservation
+    # Ensure wall is PolyData (smooth_taubin is a PolyData method)
+    if hasattr(wall, 'extract_surface'):
+        wall = wall.extract_surface()
+    smoothed_wall = wall.smooth_taubin(n_iter=10,pass_band=0.05,normalize_coordinates=True)
+    #smoothed_wall = wall
+    smoothed_walls.append(smoothed_wall)
+
+# try:
+    radius_factor = 4
+    junction_regions = identify_junction_regions(smoothed_wall, junctions, junction_radii, junction_points, radius_factor)
+    center_list = []; radius_list = []; local_edge_size_list = []
+    for region in junction_regions:
+        center = region.points.mean(axis=0).tolist()
+        radius = np.linalg.norm(region.points - center, axis=1).max()
+        local_edge_size = radius/(5 * radius_factor)
+        center_list.append(center); radius_list.append(radius); local_edge_size_list.append(local_edge_size)
 
 
-        if hsize is not None:
-            # Use the provided hsize parameter
-            global_edge_size = hsize
-            print(f"Using provided hsize for global_edge_size: {global_edge_size:.6f}")
-        elif tree_data is not None and len(tree_data) > 0:
-            # Get all vessel radii (column 21 in tree_data)
-            vessel_radii = tree_data[:, 21]
-            # Find the smallest radius, excluding any NaN or zero values
-            valid_radii = vessel_radii[np.isfinite(vessel_radii) & (vessel_radii > 0)]
-            if len(valid_radii) > 0:
-                r_smallest = np.min(valid_radii)
-                global_edge_size = r_smallest 
-                print(f"Using global_edge_size = r_smallest * {global_edge_size_factor} = {r_smallest:.6f} * {global_edge_size_factor} = {global_edge_size:.6f}")
-            else:
-                global_edge_size = 0.5  # fallback
-                print("Warning: No valid radii found, using default global_edge_size = 0.1")
+    if hsize is not None:
+        # Use the provided hsize parameter
+        global_edge_size = hsize
+        print(f"Using provided hsize for global_edge_size: {global_edge_size:.6f}")
+    elif tree_data is not None and len(tree_data) > 0:
+        # Get all vessel radii (column 21 in tree_data)
+        vessel_radii = tree_data[:, 21]
+        # Find the smallest radius, excluding any NaN or zero values
+        valid_radii = vessel_radii[np.isfinite(vessel_radii) & (vessel_radii > 0)]
+        if len(valid_radii) > 0:
+            r_smallest = np.min(valid_radii)
+            global_edge_size = r_smallest /2
+            print(f"Using global_edge_size = {r_smallest}")
         else:
-            global_edge_size = 0.5  # fallback
-            print("Warning: No tree_data available, using default global_edge_size = 0.1")
-        
-        # Set hsize to the calculated global_edge_size
-        hsize = global_edge_size
-        
-        print("Sphere refinement: ", radius_list, center_list, local_edge_size_list)
-        #smoothed_wall = sphere_refinement(mesh = smoothed_wall, radius_list = radius_list, center_list = center_list, local_edge_size_list = local_edge_size_list, global_edge_size = global_edge_size)
-
-        # Reconstruct the mesh with smoothed walls
-        
-        assert len(smoothed_walls) == 1, "Only one wall face should be present for junction smoothing"
-        smoothed_mesh = smoothed_walls[0]
-            
-        caps.insert(0, smoothed_mesh)
-        smoothed_mesh = pv.merge(caps)
-        smoothed_mesh.hsize = hsize
-            # for region in junction_regions:
-            #     smoothed_walls.append(region.extract_surface().subdivide(1,'linear'))
-            
-        
-        
-        fixer = pymeshfix.MeshFix(smoothed_mesh)
-        fixer.repair(verbose=True, joincomp=True, remove_smallest_components=False)
-        smoothed_mesh = fixer.mesh.extract_surface().triangulate().clean()
-        smoothed_mesh.hsize = hsize if hsize is not None else mesh.hsize
-
-        return smoothed_mesh
-    
-
+            global_edge_size = 0.4  # fallback
+            print("Warning: No valid radii found, using default global_edge_size = 0.1")
     else:
-        # For multiple walls, merge them
-        smoothed_mesh = pv.merge(smoothed_walls)
-        smoothed_mesh.hsize = hsize if hsize is not None else mesh.hsize
+        global_edge_size = 0.4  # fallback
+        print("Warning: No tree_data available, using default global_edge_size = 0.1")
+    #global_edge_size = 0.3
+    # Set hsize to the calculated global_edge_size
+    hsize = global_edge_size
+    
+    print("Sphere refinement: ", radius_list, center_list, local_edge_size_list)
+    smoothed_wall = sphere_refinement(mesh = smoothed_wall, radius_list = radius_list, center_list = center_list, local_edge_size_list = local_edge_size_list, global_edge_size = global_edge_size)
+
+    # Reconstruct the mesh with smoothed walls
+    if not len(smoothed_walls) == 1:
+
+        import pdb; pdb.set_trace()
+    assert len(smoothed_walls) == 1, "Only one wall face should be present for junction smoothing"
+    smoothed_mesh = smoothed_wall
         
-        return smoothed_mesh
+    caps.insert(0, smoothed_mesh)
+    smoothed_mesh = pv.merge(caps, merge_points=False)
+    smoothed_mesh.hsize = global_edge_size
+    # smoothed_mesh.hsize = hsize
+    #     # for region in junction_regions:
+    #     #     smoothed_walls.append(region.extract_surface().subdivide(1,'linear'))
+        
+    
+    
+    # fixer = pymeshfix.MeshFix(smoothed_mesh)
+    # fixer.repair(verbose=True, joincomp=False, remove_smallest_components=False)
+    # smoothed_mesh = fixer.mesh.extract_surface().triangulate().clean()
+    #smoothed_mesh.hsize = hsize if hsize is not None else mesh.hsizec
+
+    
+    return smoothed_mesh
 
 
 def get_junction_statistics(tree_data, vessel_map, connectivity):

@@ -319,12 +319,8 @@ def generate_tube(polyline, hsize=None):
     fix.repair()
     tube = fix.mesh
     tube = tube.compute_normals(auto_orient_normals=True)
-    if isinstance(hsize, type(None)):
-        hsize = min(polyline['radius']) * 0.5
-    else:
-        # Use the provided hsize parameter
-        hsize = min(polyline['radius']) * 0.5
-        print(f"Using provided hsize: {hsize}")
+    hsize = min(polyline['radius']) * 0.2
+    print(f"Using provided hsize: {hsize}")
     # Force mesh size using hmin and hmax parameters
     tube = remesh_surface(tube, hmin=hsize, hmax=hsize*1.5, noinsert = False, nomove = False, nosurf = False, hausd = 0.1, hgrad = -1.0,verbosity = 3)
     tube = tube.compute_normals(auto_orient_normals=True)
@@ -450,7 +446,11 @@ def build_watertight_solid(tree, cap_resolution=10, smooth_junctions=True,
         )
         print("Junction smoothing completed.")
     
-    # Remove poor quality elements and repair the mesh.
+    # Remove poor quality elements and repair the mesh
+    hsize = model.hsize
+    fixer = pymeshfix.MeshFix(model)
+    fixer.repair(verbose=True, joincomp=True, remove_smallest_components=True)
+    model = fixer.mesh.extract_surface().triangulate().clean()
     cell_quality = model.compute_cell_quality(quality_measure='scaled_jacobian')
     keep = cell_quality.cell_data["CellQuality"] > 0.1
     if not numpy.all(keep):
@@ -460,9 +460,8 @@ def build_watertight_solid(tree, cap_resolution=10, smooth_junctions=True,
         non_manifold_model = non_manifold_model.extract_surface()
         fix = pymeshfix.MeshFix(non_manifold_model)
         fix.repair(verbose=True)
-        hsize = model.hsize
         model = fix.mesh.compute_normals(auto_orient_normals=True)
-        model.hsize = hsize
+    model.hsize = hsize
     return model
 
 

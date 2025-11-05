@@ -549,8 +549,178 @@ class BoundaryLayer(object):
         boundaries = outer.extract_feature_edges(boundary_edges=True, manifold_edges=False, feature_edges=False,
                                                  non_manifold_edges=False)
         boundaries = boundaries.split_bodies()
-        caps = []
         
+        # Extract inner surface from layers and get its caps
+        inner = layers.extract_cells(inner_surface_cells)
+        inner = inner.extract_surface()
+        inner_boundaries = inner.extract_feature_edges(
+            boundary_edges=True, manifold_edges=False,
+            feature_edges=False, non_manifold_edges=False
+        )
+        inner_caps = []
+        if inner_boundaries.n_points > 0:
+            inner_boundary_loops = inner_boundaries.split_bodies()
+            inner_caps = inner_boundary_loops
+        
+        # Match boundaries to caps from layers and compute their planes
+        original_cap_planes = []
+        if len(inner_caps) > 0:
+            # Compute plane for each inner cap from layers
+            for inner_cap in inner_caps:
+                if inner_cap is None or inner_cap.n_points < 3:
+                    original_cap_planes.append(None)
+                    continue
+                
+                # For a boundary loop, compute plane from the loop itself
+                # Get boundary points (the loop is already the boundary)
+                boundary_points = inner_cap.points
+                boundary_centroid = np.mean(boundary_points, axis=0)
+                
+                # Center boundary points
+                centered_boundary = boundary_points - boundary_centroid
+                
+                # Find plane normal using PCA (direction of least variance)
+                if centered_boundary.shape[0] >= 3:
+                    U, s, Vt = np.linalg.svd(centered_boundary, full_matrices=False)
+                    plane_normal = Vt[-1, :]  # Normal to best-fit plane
+                    plane_normal = plane_normal / np.linalg.norm(plane_normal)
+                    
+                    # Try to get normal direction from the inner surface if available
+                    # Find points on inner surface near this cap
+                    inner_tree = cKDTree(inner.points)
+                    dists, indices = inner_tree.query(boundary_points[:min(10, len(boundary_points))], k=1)
+                    nearby_inner_points = inner.points[indices]
+                    if len(nearby_inner_points) > 0:
+                        # Compute approximate normal from nearby surface points
+                        inner_with_normals = inner.compute_normals(point_normals=True)
+                        nearby_normals = inner_with_normals.point_data["Normals"][indices]
+                        avg_normal = np.mean(nearby_normals, axis=0)
+                        avg_normal = avg_normal / np.linalg.norm(avg_normal)
+                        if np.dot(plane_normal, avg_normal) < 0:
+                            plane_normal = -plane_normal
+                    
+                    original_cap_planes.append({
+                        'normal': plane_normal,
+                        'point': boundary_centroid
+                    })
+                else:
+                    original_cap_planes.append(None)
+        else:
+            original_cap_planes = [None] * len(boundaries)
+        
+        # Match boundaries to inner caps from layers by centroid proximity
+        boundary_to_cap_map = {}
+        if len(original_cap_planes) > 0 and any(p is not None for p in original_cap_planes):
+            # Compute centroids of inner caps from layers
+            inner_cap_centroids = []
+            for inner_cap in inner_caps:
+                if inner_cap is not None and inner_cap.n_points > 0:
+                    inner_cap_centroids.append(np.mean(inner_cap.points, axis=0))
+                else:
+                    inner_cap_centroids.append(None)
+            
+            # Match each boundary to nearest inner cap from layers
+            for i, boundary in enumerate(boundaries):
+                if boundary.n_points > 0:
+                    boundary_centroid = np.mean(boundary.points, axis=0)
+                    min_dist = np.inf
+                    best_cap_idx = None
+                    
+                    for cap_idx, cap_centroid in enumerate(inner_cap_centroids):
+                        if cap_centroid is not None and cap_idx < len(original_cap_planes) and original_cap_planes[cap_idx] is not None:
+                            dist = np.linalg.norm(boundary_centroid - cap_centroid)
+                            if dist < min_dist:
+                                min_dist = dist
+                                best_cap_idx = cap_idx
+                    
+                    if best_cap_idx is not None:
+                        boundary_to_cap_map[i] = best_cap_idx
+        
+        # Adjust cap points in layers mesh to be flat (coplanar)
+        if len(inner_caps) > 0 and len(original_cap_planes) > 0:
+            print("Flattening caps in layers mesh...")
+            layers_tree = cKDTree(layers.points)
+            updated_layers_points = set()
+            
+            for cap_idx, inner_cap in enumerate(inner_caps):
+                if inner_cap is None or inner_cap.n_points < 3:
+                    continue
+                
+                if cap_idx >= len(original_cap_planes) or original_cap_planes[cap_idx] is None:
+                    continue
+                
+                cap_plane = original_cap_planes[cap_idx]
+                plane_normal = cap_plane['normal']
+                plane_point = cap_plane['point']
+                
+                # Find all points in layers mesh that are near this cap
+                # Use the cap boundary points to find corresponding layers points
+                for cap_point in inner_cap.points:
+                    # Find nearest point in layers mesh
+                    dists, indices = layers_tree.query(cap_point, k=1)
+                    
+                    # Use a tolerance based on mesh scale
+                    # Estimate mesh scale from cap size
+                    cap_bounds = inner_cap.bounds
+                    cap_size = np.max([cap_bounds[1] - cap_bounds[0], 
+                                     cap_bounds[3] - cap_bounds[2], 
+                                     cap_bounds[5] - cap_bounds[4]])
+                    tolerance = cap_size * 0.1  # 10% of cap size
+                    
+                    if dists < tolerance and indices not in updated_layers_points:
+                        # Project this layers point onto the cap plane
+                        layers_point = layers.points[indices]
+                        centered_point = layers_point - plane_point
+                        projection = np.dot(centered_point, plane_normal) * plane_normal
+                        projected_point = layers_point - projection
+                        
+                        # Update the point in layers mesh
+                        layers.points[indices] = projected_point
+                        updated_layers_points.add(indices)
+                
+                # Also find points that are on the cap boundary more systematically
+                # Get all points in layers that are within a small distance of the cap plane
+                # This ensures we catch all cap-related points, not just boundary points
+                cap_centroid = np.mean(inner_cap.points, axis=0)
+                cap_radius = np.max(np.linalg.norm(inner_cap.points - cap_centroid, axis=1))
+                
+                # Query all points within cap radius + tolerance
+                query_radius = cap_radius * 1.2
+                nearby_indices = layers_tree.query_ball_point(cap_centroid, query_radius)
+                
+                for idx in nearby_indices:
+                    if idx in updated_layers_points:
+                        continue
+                    
+                    layers_point = layers.points[idx]
+                    centered_point = layers_point - plane_point
+                    
+                    # Check if point is near the plane (within tolerance)
+                    distance_to_plane = np.abs(np.dot(centered_point, plane_normal))
+                    distance_from_centroid = np.linalg.norm(layers_point - cap_centroid)
+                    
+                    # Only project points that are near the plane and within cap radius
+                    if distance_to_plane < tolerance and distance_from_centroid < query_radius:
+                        projection = np.dot(centered_point, plane_normal) * plane_normal
+                        projected_point = layers_point - projection
+                        layers.points[idx] = projected_point
+                        updated_layers_points.add(idx)
+            
+            if len(updated_layers_points) > 0:
+                print(f"Flattened {len(updated_layers_points)} points in layers mesh caps.")
+                # Re-extract inner and outer surfaces after flattening
+                inner = layers.extract_cells(inner_surface_cells)
+                inner = inner.extract_surface()
+                outer = layers.extract_cells(outer_surface_cells)
+                outer = outer.extract_surface()
+                outer_tree = cKDTree(outer.points)
+                
+                # Re-extract boundaries from the updated outer surface
+                boundaries = outer.extract_feature_edges(boundary_edges=True, manifold_edges=False, 
+                                                        feature_edges=False, non_manifold_edges=False)
+                boundaries = boundaries.split_bodies()
+        
+        caps = []
         for i, boundary in enumerate(boundaries):
             bounds = boundary.bounds
             xmin, xmax, ymin, ymax, zmin, zmax = bounds
@@ -562,20 +732,110 @@ class BoundaryLayer(object):
 
             # Calculate the maximum distance (diagonal of the bounding box)
             max_distance = np.sqrt(dx**2 + dy**2 + dz**2)
-            cap = remesh_surface_2d(boundaries[i], hsiz=max_distance/20)
-            #cap = boundaries[i]
-            #_, outer_cap_inds = outer_tree.query(cap.points)
-            #cap.points[:boundaries[i].n_points, :] = outer.points[outer_cap_inds[:boundaries[i].n_points], :]
+            cap = remesh_surface_2d(boundaries[i], hsiz=max_distance/10)
+            
+            # Make cap coplanar with corresponding original cap if available
+            if i in boundary_to_cap_map:
+                cap_plane = original_cap_planes[boundary_to_cap_map[i]]
+                if cap_plane is not None:
+                    # Project all cap points onto the plane
+                    plane_normal = cap_plane['normal']
+                    plane_point = cap_plane['point']
+                    
+                    # Project points onto plane
+                    cap_points = cap.points
+                    centered_points = cap_points - plane_point
+                    projections = np.outer(np.dot(centered_points, plane_normal), plane_normal)
+                    flattened_points = cap_points - projections
+                    
+                    # Update cap points
+                    cap.points = flattened_points
+                    # Recompute normals
+                    cap = cap.compute_normals(point_normals=True, cell_normals=True)
+                else:
+                    print("No corresponding original cap found for boundary {}.".format(i))
+                    import pdb; pdb.set_trace()
             caps.append(cap)
+
             # cap looks good
-        caps.insert(0, outer)
         
+        # Adjust boundary points in outer to lie on the corrected caps
+        if len(caps) > 0 and len(boundary_to_cap_map) > 0:
+            # Extract boundary edges from outer and split into loops
+            outer_boundaries = outer.extract_feature_edges(
+                boundary_edges=True, manifold_edges=False,
+                feature_edges=False, non_manifold_edges=False
+            )
+            
+            if outer_boundaries.n_points > 0:
+                boundary_loops = outer_boundaries.split_bodies()
+                
+                # Create a KDTree for outer points for fast lookup
+                outer_tree = cKDTree(outer.points)
+                
+                # Track which points have been updated
+                updated_points = set()
+                
+                # Match each boundary loop to a cap and project its points
+                for loop_idx, boundary_loop in enumerate(boundary_loops):
+                    if boundary_loop.n_points < 3:
+                        continue
+                    
+                    # Find which cap this boundary loop corresponds to
+                    loop_centroid = np.mean(boundary_loop.points, axis=0)
+                    min_dist = np.inf
+                    best_cap_idx = None
+                    
+                    for cap_idx, cap in enumerate(caps):
+                        if cap is not None and cap.n_points > 0:
+                            cap_centroid = np.mean(cap.points, axis=0)
+                            dist = np.linalg.norm(loop_centroid - cap_centroid)
+                            if dist < min_dist:
+                                min_dist = dist
+                                best_cap_idx = cap_idx
+                    
+                    # Get the plane for this cap
+                    if best_cap_idx is not None and best_cap_idx < len(boundaries) and best_cap_idx in boundary_to_cap_map:
+                        cap_plane = original_cap_planes[boundary_to_cap_map[best_cap_idx]]
+                        
+                        if cap_plane is not None:
+                            plane_normal = cap_plane['normal']
+                            plane_point = cap_plane['point']
+                            
+                            # Project all points in this boundary loop onto the cap plane
+                            for loop_point in boundary_loop.points:
+                                # Find nearest point in outer
+                                dists, indices = outer_tree.query(loop_point, k=1)
+                                
+                                # Use a tolerance based on mesh scale
+                                # Boundary points should be very close to outer surface
+                                tolerance = 1e-3  # Adjust based on typical mesh scale
+                                
+                                if dists < tolerance and indices not in updated_points:
+                                    # Project this outer point onto the cap plane
+                                    outer_point = outer.points[indices]
+                                    centered_point = outer_point - plane_point
+                                    projection = np.dot(centered_point, plane_normal) * plane_normal
+                                    projected_point = outer_point - projection
+                                    
+                                    # Update the point in outer
+                                    outer.points[indices] = projected_point
+                                    updated_points.add(indices)
+                
+                # Recompute normals for outer after point updates
+                if len(updated_points) > 0:
+                    outer = outer.compute_normals(point_normals=True, cell_normals=True)
+        
+        caps.insert(-1, outer)
         print("Constructing outer surface...")
         outer_total = pv.merge(caps, merge_points=True, progress_bar=True)
         outer_total = outer_total.clean(tolerance=tolerance, progress_bar=True)
+
+        
         
         fixer = pymeshfix.MeshFix(outer_total)
-        fixer.repair(verbose=True, )
+        
+        fixer.repair(verbose=True, remove_smallest_components=False, joincomp=True)
         outer_total = fixer.mesh.extract_surface().triangulate().clean()
         
         if not outer_total.is_manifold:
@@ -588,6 +848,43 @@ class BoundaryLayer(object):
         outer_total_quality = outer_total.compute_cell_quality().cell_data["CellQuality"]
         if np.any(outer_total_quality < 0.0):
             warnings.warn("Outer Surface has inverted triangles.")
+            raise ValueError("Outer Surface has inverted triangles.")
+        
+        # Plot outer_total and layers for visualization
+        print("Plotting outer_total and layers...")
+        plotter = pv.Plotter()
+        
+        # Plot outer_total surface in red
+        plotter.add_mesh(outer_total, color='red', opacity=0.7, show_edges=True, 
+                        label='Outer Total Surface', line_width=2)
+        
+        # Plot layers mesh in blue (wireframe to see through)
+        plotter.add_mesh(layers, color='blue', opacity=0.3, show_edges=True,
+                        label='Layers Mesh', style='wireframe', line_width=1)
+        
+        # Extract and plot inner surface from layers in green
+        inner_surface_cells = np.argwhere(layers.cell_data['EntityID'] == self.inner_surface_cell_entity_id).flatten()
+        if len(inner_surface_cells) > 0:
+            inner_surface = layers.extract_cells(inner_surface_cells).extract_surface()
+            plotter.add_mesh(inner_surface, color='green', opacity=0.5, show_edges=False,
+                            label='Inner Surface')
+        
+        # Extract and plot outer surface from layers in cyan
+        outer_surface_cells = np.argwhere(layers.cell_data['EntityID'] == self.outer_surface_cell_entity_id).flatten()
+        if len(outer_surface_cells) > 0:
+            outer_surface_from_layers = layers.extract_cells(outer_surface_cells).extract_surface()
+            plotter.add_mesh(outer_surface_from_layers, color='cyan', opacity=0.4, show_edges=True,
+                            label='Outer Surface from Layers')
+        
+        # Add legend
+        plotter.add_legend()
+        
+        # Set background
+        plotter.background_color = 'white'
+        
+        # Show the plot
+        #plotter.show()
+        
         interior = tetgen.TetGen(outer_total)
         print("Created tetgen object.")
         interior.tetrahedralize(switches='pq1.1/10MVYSJ')
@@ -595,12 +892,14 @@ class BoundaryLayer(object):
         print("Interior Volume Mesh: {} points, {} cells".format(mesh_interior.n_points, mesh_interior.n_cells))
         if self.remesh_vol:
             print("Remeshing interior volume...")
-            mesh_interior = remesh_volume(mesh_interior, nosurf=True)
+            #mesh_interior = remesh_volume(mesh_interior, nosurf=True) # maybe flip this to False
+            mesh_interior = remesh_volume(mesh_interior)
             print("Remeshing interior complete.")
         mesh_interior = mesh_interior.triangulate().clean()
         mesh_interior_surface = mesh_interior.extract_surface()
         if not mesh_interior_surface.is_manifold:
             warnings.warn("Interior Surface is not manifold.")
+            raise ValueError("Interior Surface is not manifold.")
         else:
             print("Interior Surface is manifold.")
         layers_volume = layers.extract_cells(np.argwhere(layers.cell_data['EntityID'] == self.volume_cell_entity_id).flatten())
@@ -608,6 +907,7 @@ class BoundaryLayer(object):
         layers_surface = layers_volume.extract_surface()
         if not layers_surface.is_manifold:
             warnings.warn("Layers Surface is not manifold.")
+            raise ValueError("Layers Surface is not manifold.")
         else:
             print("Layers Surface is manifold.")
         # Check Quality of Combined Mesh
@@ -648,10 +948,12 @@ class BoundaryLayer(object):
         #combined_mesh = pv.merge([layers_volume, mesh_interior])
         #combined_mesh = combined_mesh.triangulate().clean()
         combined_mesh_surface = combined_mesh.extract_surface()
+
         if not combined_mesh_surface.is_manifold:
             non_manifold_edges = combined_mesh_surface.extract_feature_edges(boundary_edges=False, manifold_edges=False,
                                                                              feature_edges=False, non_manifold_edges=True)
             warnings.warn("Combined Mesh Surface is not manifold.\n {} Non-Manifold Edges at: {}".format(non_manifold_edges.n_cells, non_manifold_edges.cell_data["vtkOriginalCellIds"]) )
+            raise ValueError("Combined Mesh Surface is not manifold.")
         else:
             print("Combined Mesh Surface is manifold.")
         # combined_mesh = pv.merge([layers_volume, mesh_interior], merge_points=True)

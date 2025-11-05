@@ -158,7 +158,9 @@ class Simulation(object):
                             extension_scale += 1.0
                     root_extension = self.synthetic_object.data[0, 21] * extension_scale
                     self.synthetic_object.data[0, 0:3] -= root_extension * self.synthetic_object.data.get('w_basis', 0)
-                fluid_surface_mesh = self.synthetic_object.export_solid(watertight=True, smooth_junctions=smooth_junctions, hsize=hsize, cap_resolution=20)
+                fluid_surface_mesh = self.synthetic_object.export_solid(watertight=True, smooth_junctions=smooth_junctions, hsize=hsize, cap_resolution=10)
+                print(f"Fluid surface mesh built!")
+
                 tet_fluid = tetgen.TetGen(fluid_surface_mesh)
 
                 try:
@@ -198,7 +200,7 @@ class Simulation(object):
                         #fluid_surface_mesh = fluid_volume_mesh.extract_surface()
                         #fluid_surface_faces = extract_faces(fluid_surface_mesh, fluid_volume_mesh)
                         wall = fluid_surface_faces[3][0]
-                        caps = fluid_surface_faces[1]
+                        caps = fluid_surface_faces[2]
                         max_distance = 0.0
                         for i, cap in enumerate(caps):
                             bounds = cap.bounds
@@ -211,28 +213,22 @@ class Simulation(object):
                             max_distance = max((max_distance, numpy.sqrt(dx**2 + dy**2 + dz**2)))
                             
                             
-                            
-                        for i in range(boundary_layer_attempts):
-                            try:
-                                # wall looks good here
-                                fluid_boundary_layers = BoundaryLayer(wall, caps, 
-                                                                      layer_thickness=max_distance*0.1,
-                                                                      layer_thickness_ratio=1, 
-                                                                      number_of_sublayers= 5,
-                                                                      sublayer_ratio=0.75,
-                                                                      remesh_vol=remesh_vol)
-                                fluid_volume_mesh, fluid_interior, fluid_boundary = fluid_boundary_layers.generate()
-                                success = True
-                                print("Generated boundary layers on attempt {}/{}.".format(i+1, boundary_layer_attempts))
+                        success = False    
+                        # for i in range(boundary_layer_attempts):
+                        #     #try:
+                        #         # wall looks good here
+                        #     if success:
+                        #         break
+                        fluid_boundary_layers = BoundaryLayer(wall, caps, 
+                                                                layer_thickness=max_distance*0.1,
+                                                                layer_thickness_ratio=1, 
+                                                                number_of_sublayers= 5,
+                                                                sublayer_ratio=0.75,
+                                                                remesh_vol=remesh_vol)
+                        fluid_volume_mesh, fluid_interior, fluid_boundary = fluid_boundary_layers.generate()
+                        success = True
+                        print("Generated boundary layers.")# on attempt {}/{}.".format(i+1, boundary_layer_attempts))
 
-                            except:
-                                print("Failed to generate boundary layers {}/{}.\n".format(i+1, boundary_layer_attempts))
-                                fluid_boundary = None
-                                fluid_interior = None
-                                success = False
-                                layer_thickness_ratio *= layer_thickness_ratio_adjustment
-                            if success:
-                                break
                         self.fluid_domain_boundary_layers.append(fluid_boundary)
                         self.fluid_domain_interiors.append(fluid_interior)
                     else:
@@ -261,6 +257,7 @@ class Simulation(object):
                     self.fluid_domain_volume_meshes.append(fluid_volume_mesh)
                     if tissue:
                         self.synthetic_object.data[0, 0:3] += root_extension * self.synthetic_object.data.get('w_basis',0)
+            
             if tissue and not isinstance(self.synthetic_object.domain, type(None)):
                 # Extrude the root of the tree to ensure proper intersection with the tissue domain.
                 if not fluid:
@@ -411,23 +408,23 @@ class Simulation(object):
                                     print("No wall mesh found for boundary layer generation.")
                                 wall = fluid_surface_faces[1][0]
                                 for j in range(boundary_layer_attempts):
-                                    try:
-                                        fluid_boundary_layers = BoundaryLayer(wall,
-                                                                              layer_thickness=layer_thickness_ratio * hsize,
-                                                                              remesh_vol=remesh_vol)
-                                        fluid_volume, fluid_interior, fluid_boundary = fluid_boundary_layers.generate()
-                                        fluid_surface = fluid_volume.extract_surface()
-                                        success = True
-                                        
-                                        print("Generated boundary layers on attempt {}/{}.".format(i + 1,
-                                                                                                   boundary_layer_attempts))
-                                    except:
-                                        print("Failed to generate boundary layers {}/{}.\n".format(i + 1,
-                                                                                                   boundary_layer_attempts))
-                                        fluid_boundary = None
-                                        fluid_interior = None
-                                        success = False
-                                        layer_thickness_ratio *= layer_thickness_ratio_adjustment
+                                    #try:
+                                    fluid_boundary_layers = BoundaryLayer(wall,
+                                                                            layer_thickness=layer_thickness_ratio * hsize,
+                                                                            remesh_vol=remesh_vol)
+                                    fluid_volume, fluid_interior, fluid_boundary = fluid_boundary_layers.generate()
+                                    fluid_surface = fluid_volume.extract_surface()
+                                    success = True
+                                    
+                                    print("Generated boundary layers on attempt {}/{}.".format(i + 1,
+                                                                                                boundary_layer_attempts))
+                                    # except:
+                                    #     print("Failed to generate boundary layers {}/{}.\n".format(i + 1,
+                                    #                                                                boundary_layer_attempts))
+                                    #     fluid_boundary = None
+                                    #     fluid_interior = None
+                                    #     success = False
+                                    #     layer_thickness_ratio *= layer_thickness_ratio_adjustment
                                         
                                     if success:
                                         break
@@ -517,9 +514,10 @@ class Simulation(object):
                 assert (len(self.fluid_domain_surface_meshes) == 1)
                 assert (len(self.fluid_domain_volume_meshes) == 1)
                 
-                faces, caps, should_be_empty, walls, shared_boundaries = extract_faces(self.fluid_domain_surface_meshes[0],
+                faces, should_be_empty, caps,walls, shared_boundaries  = extract_faces(self.fluid_domain_surface_meshes[0],
                                                                       self.fluid_domain_volume_meshes[0],
                                                                       crease_angle=crease_angle, verbose=verbose)
+
                 self.fluid_domain_faces.append({'walls': walls, 'caps': caps, 'shared_boundaries': shared_boundaries})
                 fluid_mesh = GeneralMesh()
                 fluid_mesh.add_mesh(self.fluid_domain_volume_meshes[0], name='fluid_msh_0')
@@ -532,7 +530,7 @@ class Simulation(object):
                 fluid_mesh.check_mesh()
                 self.fluid_domain_meshes.append(fluid_mesh)
             if len(self.tissue_domain_surface_meshes) > 0 and len(self.tissue_domain_volume_meshes) > 0:
-                faces, caps, should_be_empty, walls, shared_boundaries = extract_faces(self.tissue_domain_surface_meshes[0],
+                faces, should_be_empty, caps, walls, shared_boundaries  = extract_faces(self.tissue_domain_surface_meshes[0],
                                                                       self.tissue_domain_volume_meshes[0],
                                                                       crease_angle=crease_angle, verbose=verbose)
                 self.tissue_domain_faces.append({'walls': walls, 'caps': caps, 'shared_boundaries': shared_boundaries})
@@ -559,7 +557,7 @@ class Simulation(object):
                         network_fluid_faces.append(None)
                         network_fluid_domains.append(None)
                         continue
-                    nodes, walls, caps, shared_boundaries = extract_faces(surface, mesh, crease_angle=crease_angle,
+                    faces, should_be_empty, caps, walls, shared_boundaries = extract_faces(surface, mesh, crease_angle=crease_angle,
                                                                           verbose=verbose)
                     network_fluid_faces.append({'walls': walls, 'caps': caps, 'shared_boundaries': shared_boundaries})
                     fluid_mesh = GeneralMesh()
@@ -576,7 +574,7 @@ class Simulation(object):
                 for j in range(len(self.tissue_domain_surface_meshes[i])):
                     surface = self.tissue_domain_surface_meshes[i][j]
                     mesh = self.tissue_domain_volume_meshes[i][j]
-                    nodes, walls, caps, lumens, shared_boundaries = extract_faces(surface, mesh, crease_angle=crease_angle,
+                    faces, should_be_empty, caps, walls, shared_boundaries  = extract_faces(surface, mesh, crease_angle=crease_angle,
                                                                           verbose=False)
                     network_tissue_faces.append({'walls': walls, 'caps': caps, 'shared_boundaries': shared_boundaries})
                     tissue_mesh = GeneralMesh()

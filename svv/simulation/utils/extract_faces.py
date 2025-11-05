@@ -9,6 +9,113 @@ except ImportError:
     PYVISTA_AVAILABLE = False
 
 
+def is_circle(boundary, tolerance=0.15, min_points=3):
+    """
+    Check if a boundary surface approximates a circle.
+    
+    This function projects the boundary points onto their best-fit plane,
+    computes distances from the centroid, and checks if the distribution
+    is approximately circular (uniform radius).
+    
+    Parameters
+    ----------
+    boundary : pyvista.PolyData
+        The boundary surface to check (should be a mesh of a boundary face)
+    tolerance : float, optional
+        Maximum coefficient of variation (std/mean) for distances to be 
+        considered circular. Default is 0.15 (15% variation allowed).
+    min_points : int, optional
+        Minimum number of points required for a valid circle check.
+        Default is 3.
+    
+    Returns
+    -------
+    bool
+        True if the boundary approximates a circle, False otherwise.
+    """
+    if not PYVISTA_AVAILABLE:
+        return False
+    
+    #import pdb; pdb.set_trace()
+    if boundary is None or boundary.n_points < min_points:
+        return False
+        
+    try:
+        # Get boundary points
+        points = boundary.points
+        
+        # Compute centroid
+        centroid = numpy.mean(points, axis=0)
+        
+        # Center points around origin
+        centered_points = points - centroid
+        
+        # Compute best-fit plane using PCA
+        # This finds the plane that minimizes perpendicular distances
+        if centered_points.shape[0] < 3:
+            return False
+        
+        # Use SVD to find the normal vector (last column of V)
+        U, s, Vt = numpy.linalg.svd(centered_points, full_matrices=False)
+        normal = Vt[-1, :]  # Normal to best-fit plane
+        
+        # Project points onto the plane
+        # Remove component along normal
+        projected_points = centered_points - numpy.outer(centered_points @ normal, normal)
+        
+        # Compute distances from centroid in the plane
+        distances = numpy.linalg.norm(projected_points, axis=1)
+        
+        # Check if distances are approximately uniform (circular)
+        mean_distance = numpy.mean(distances)
+        
+        if mean_distance < 1e-10:  # Degenerate case (all points at same location)
+            return False
+        
+        # Coefficient of variation (std/mean)
+        cv = numpy.std(distances) / mean_distance
+        
+        # Also check aspect ratio of the projected shape
+        # Use the first two principal components in the plane
+        if projected_points.shape[0] < 2:
+            return False
+        
+        # Find two orthogonal directions in the plane using PCA on projected points
+        if len(s) > 1:
+            # Projected points are already in the plane, use their first two principal directions
+            U_proj, s_proj, Vt_proj = numpy.linalg.svd(projected_points, full_matrices=False)
+            
+            if len(s_proj) >= 2:
+                # Project points onto first two principal directions
+                proj1 = projected_points @ Vt_proj[0, :]
+                proj2 = projected_points @ Vt_proj[1, :]
+                
+                # Compute extents along each principal direction
+                extent1 = numpy.max(proj1) - numpy.min(proj1)
+                extent2 = numpy.max(proj2) - numpy.min(proj2)
+                
+                if extent1 > 1e-10 and extent2 > 1e-10:
+                    aspect_ratio = max(extent1, extent2) / min(extent1, extent2)
+                else:
+                    aspect_ratio = 1.0  # Degenerate case, treat as circular
+            else:
+                aspect_ratio = 1.0  # Not enough dimensions, treat as circular
+        else:
+            aspect_ratio = 1.0  # Fallback
+        
+        # Consider it circular if:
+        # 1. Coefficient of variation is small (uniform distances)
+        # 2. Aspect ratio is close to 1 (nearly round)
+        is_circular = (cv < tolerance) and (aspect_ratio < 1.0 + tolerance * 2)
+        print(f"Is circular: {is_circular}")
+        return is_circular
+        
+    except Exception as e:
+        # If anything goes wrong, assume it's not a circle
+        return False
+
+
+
 def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = True, combine_walls: bool = True):
     """
     This function extracts the boundary domains from a given
@@ -72,15 +179,22 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = True,
         face_boundary = face_cells.extract_feature_edges(boundary_edges=True, manifold_edges=False,
                                                           feature_edges=False, non_manifold_edges=False)
         annealed = False
-        if face_cells.n_points == face_boundary.n_points and len(face_boundary.split_bodies()) == 1:
+        if face_cells.n_points >= 1000:
+                print("Face {} is large, most likely a lumen.".format(i))
+        if ((face_cells.n_points == face_boundary.n_points and len(face_boundary.split_bodies()) == 1) or \
+                not is_circle(face_boundary, tolerance=0.2, min_points=3)) \
+                and face_cells.n_points <1000:
+
             if verbose:
+
+
                 print("Face {} is degenerate with no internal vertices.".format(i))
             for j, bounds in enumerate(face_boundaries):
                 if i == j:
                     continue
                 for k, bound in enumerate(bounds):
                     dists, _ = bound.query(face_boundary.points)
-                    if numpy.all(numpy.isclose(dists, 0.0)):
+                    if numpy.all(numpy.isclose(dists, 0.0, rtol=1e-2)):
                         if verbose:
                             print("Degenerate face {} annealed to face -> {}".format(i, j))
                         faces[j].extend(face)
@@ -88,20 +202,16 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = True,
                         break
                 if annealed:
                     break
-        #for j, tree in enumerate(face_trees):
-        #    if i == j:
-        #        continue
-        #    dists, _ = tree.query(face_cells.points)
-        #    if numpy.all(numpy.isclose(dists, 0.0)):
-        #        if verbose:
-        #            print("Degenerate face {} annealed to face -> {}".format(i, j))
-        #        faces[j].extend(face)
-        #        annealed = True
-        #        break
-        if not annealed:
-            if verbose:
-                print("Face {} is complete with internal vertices.".format(i))
+
+            if not annealed:
+                if verbose:
+                    print("Face {} is degenerate but not annealed.".format(i))
+        else:
             new_idx.append(i)
+            print("Face {} is complete with internal vertices.".format(i))
+
+    
+    
     for i in new_idx:
         new_faces.append(faces[i])
     faces = new_faces
@@ -419,10 +529,10 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = True,
             lumen_boundary_trees
         )
 
-        if check_boundary_overlap(cap_boundary_tree, other_boundaries):
-            caps_to_reclassify.append(i)
-            if verbose:
-                print(f"Cap {i} reclassified as wall: boundary overlaps with another boundary")
+        # if check_boundary_overlap(cap_boundary_tree, other_boundaries):
+        #     caps_to_reclassify.append(i)
+        #     if verbose:
+        #         print(f"Cap {i} reclassified as wall: boundary overlaps with another boundary")
 
     # Move overlapping caps to walls
     for i in reversed(caps_to_reclassify):  # Reverse to preserve indices during removal
@@ -778,7 +888,43 @@ def extract_faces(surface, mesh, crease_angle: float = 60, verbose: bool = True,
                     if numpy.all(numpy.isclose(dists, 0.0)):
                         shared_boundaries[i].append(k)
                         break
-    return faces, wall_surfaces, cap_surfaces, lumen_surfaces, shared_boundaries
+
+    # Some caps are wrongly classified as walls, so we add them back to the caps
+    cap_surfaces = wall_surfaces + cap_surfaces
+
+    # Merge caps if bounding boxes overlap
+    merged_list = []
+    for i in range(len(cap_surfaces)):
+        cap1_bounds = cap_surfaces[i].bounds
+        delta = numpy.sqrt((cap1_bounds[0] - cap1_bounds[1])**2 + (cap1_bounds[2] - cap1_bounds[3])**2 + (cap1_bounds[4] - cap1_bounds[5])**2)/2
+        if i in merged_list:
+            continue
+        for j in range(i + 1, len(cap_surfaces)):
+        #for j in range(len(cap_surfaces)):
+            cap2_bounds = cap_surfaces[j].bounds
+            if j in merged_list:
+                continue
+            if numpy.any(cap1_bounds[0]-delta < cap2_bounds[1] and cap1_bounds[1]+delta > cap2_bounds[0]) and \
+                numpy.any(cap1_bounds[2]-delta < cap2_bounds[3] and cap1_bounds[3]+delta > cap2_bounds[2]) and \
+                numpy.any(cap1_bounds[4]-delta < cap2_bounds[5] and cap1_bounds[5]+delta > cap2_bounds[4]):
+                print(f"Bounding boxes overlap for caps {i} and {j}")
+                print(f"Merging caps {i} and {j}")
+                cap_surfaces[i] = cap_surfaces[i].merge(cap_surfaces[j])
+                cap_boundaries[i] = cap_boundaries[i] + cap_boundaries[j]
+                cap1_bounds = cap_surfaces[i].bounds
+                merged_list.append(j)
+    cap_surfaces = [cap_surfaces[i] for i in range(len(cap_surfaces)) if i not in merged_list]
+    colors = ['red', 'green', 'blue', 'yellow', 'purple', 'orange', 'brown', 'pink', 'gray', 'black', 'white', 'cyan', 'magenta', 'lime', 'teal', 'indigo', 'violet', 'maroon', 'navy', 'olive', 'coral', 'gold', 'silver', 'plum', 'tan', 'khaki', 'lavender', 'maroon', 'navy', 'olive', 'coral', 'gold', 'silver', 'plum', 'tan', 'khaki', 'lavender']
+    if len(cap_surfaces) != 7:
+        print(f"Number of caps: {len(cap_surfaces)}")
+    assert len(cap_surfaces) == 7, "Number of caps is not 7"
+        # plotter = pv.Plotter()
+        # pv.global_theme.color_cycler = 'default'
+        # for i in range(len(cap_surfaces)):
+        #     plotter.add_mesh(cap_surfaces[i],  show_edges=True, color=colors[i], label=f"Surface {i}")
+        # plotter.show()
+        # import pdb; pdb.set_trace()
+    return faces, [], cap_surfaces, lumen_surfaces, shared_boundaries
 
 
 def has_matching_boundary(boundary_trees_a, boundary_trees_b, tolerance=1e-9):
